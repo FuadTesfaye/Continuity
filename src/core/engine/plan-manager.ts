@@ -26,7 +26,7 @@ export class PlanManager {
     title: string;
     goal: string;
     scope?: string[];
-    steps: Array<{ description: string; files?: string[] }>;
+    steps: Array<{ description: string; files?: string[] } | string>;
     constraints?: string[];
     dependencies?: string[];
     acceptanceCriteria?: string[];
@@ -39,13 +39,17 @@ export class PlanManager {
     const id = this.slugify(data.title);
     const now = new Date().toISOString();
 
-    const steps: PlanStep[] = data.steps.map((s, index) => ({
-      id: `step-${index + 1}`,
-      description: s.description,
-      status: index === 0 ? 'in_progress' : 'pending',
-      commits: [],
-      files: s.files || []
-    }));
+    const steps: PlanStep[] = data.steps.map((s, index) => {
+      const description = typeof s === 'string' ? s : s.description;
+      const files = typeof s === 'string' ? [] : s.files || [];
+      return {
+        id: `step-${index + 1}`,
+        description,
+        status: index === 0 ? 'in_progress' : 'pending',
+        commits: [],
+        files
+      };
+    });
 
     const acceptanceCriteria: AcceptanceCriterion[] = (data.acceptanceCriteria || []).map((ac, index) => ({
       id: `crit-${index + 1}`,

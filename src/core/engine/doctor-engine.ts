@@ -3,6 +3,8 @@ import { GitClient } from '../git/git-client.js';
 import { SecretRedactor } from '../security/redactor.js';
 import { StateManager } from './state-manager.js';
 import { TaskManager } from './task-manager.js';
+import { GlobalFileSystem } from '../global/global-file-system.js';
+import { DeviceDetector } from '../global/device-detector.js';
 
 export interface DoctorCheck {
   name: string;
@@ -23,7 +25,8 @@ export class DoctorEngine {
     private readonly fs: FileSystem,
     private readonly git: GitClient,
     private readonly stateManager: StateManager,
-    private readonly taskManager: TaskManager
+    private readonly taskManager: TaskManager,
+    private readonly globalFs?: GlobalFileSystem
   ) {
     this.redactor = new SecretRedactor();
   }
@@ -145,6 +148,41 @@ export class DoctorEngine {
             : `WARNING: Found ${leakedSecrets} potential raw secret(s) in: ${leakedFiles.join(', ')}`,
         warning: leakedSecrets > 0
       });
+    }
+
+    // 8. Global Memory & Environment Drift Checks
+    if (this.globalFs) {
+      const gInitialized = this.globalFs.isInitialized();
+      checks.push({
+        name: 'Global Memory (~/.continuity)',
+        passed: gInitialized,
+        message: gInitialized
+          ? `Global memory is active at ${this.globalFs.globalDir}`
+          : `Global memory not initialized. Run "continuity device --sync" or "continuity profile"`,
+        warning: !gInitialized
+      });
+
+      if (gInitialized) {
+        try {
+          const detector = new DeviceDetector(this.globalFs);
+          const drifts = await detector.detectDrift();
+          if (drifts.length > 0) {
+            const driftMsgs = drifts.map((d) => `${d.tool}: stored ${d.storedVersion} -> live ${d.currentVersion}`).join('; ');
+            checks.push({
+              name: 'Environment Drift',
+              passed: false,
+              message: `Drift detected (${driftMsgs}). Run "continuity device --sync" to update`,
+              warning: true
+            });
+          } else {
+            checks.push({
+              name: 'Environment Drift',
+              passed: true,
+              message: 'Machine environment matches stored device snapshot'
+            });
+          }
+        } catch {}
+      }
     }
 
     const overallHealthy = checks.every((c) => c.passed || c.warning);

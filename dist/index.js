@@ -251,6 +251,86 @@ var PlanSchema = z8.object({
   abandonReason: z8.string().optional()
 });
 
+// src/core/types/global.ts
+import { z as z9 } from "zod";
+var ProjectCategorySchema = z9.enum([
+  "personal",
+  "client",
+  "work",
+  "open-source",
+  "learning",
+  "experimental",
+  "archived"
+]);
+var ProjectRegistryItemSchema = z9.object({
+  id: z9.string(),
+  name: z9.string(),
+  type: ProjectCategorySchema.default("personal"),
+  path: z9.string(),
+  client: z9.string().optional(),
+  repository: z9.object({
+    provider: z9.string().default("github"),
+    accountProfile: z9.string().default("personal"),
+    owner: z9.string().optional(),
+    name: z9.string().optional(),
+    url: z9.string().optional()
+  }).optional(),
+  stack: z9.array(z9.string()).default([]),
+  continuityEnabled: z9.boolean().default(true),
+  lastAccessed: z9.string()
+});
+var ProjectRegistrySchema = z9.object({
+  version: z9.string().default("1.0"),
+  updatedAt: z9.string(),
+  projects: z9.array(ProjectRegistryItemSchema).default([])
+});
+var DeviceEnvironmentSchema = z9.object({
+  id: z9.string(),
+  name: z9.string(),
+  hostname: z9.string(),
+  os: z9.object({
+    name: z9.string(),
+    platform: z9.string(),
+    release: z9.string(),
+    arch: z9.string()
+  }),
+  runtimes: z9.record(z9.string(), z9.string()).default({}),
+  tools: z9.record(z9.string(), z9.string()).default({}),
+  shell: z9.string().optional(),
+  defaultEditor: z9.string().optional(),
+  packageManager: z9.string().default("pnpm"),
+  updatedAt: z9.string()
+});
+var AccountProfileSchema = z9.object({
+  provider: z9.string(),
+  // e.g. github, npm, docker, aws
+  profile: z9.string(),
+  // e.g. personal, work, client-acme
+  username: z9.string(),
+  email: z9.string().optional(),
+  credentialRef: z9.string(),
+  // e.g. keychain://github/personal
+  status: z9.enum(["authenticated", "unauthenticated", "unknown"]).default("authenticated"),
+  scopes: z9.array(z9.string()).default([]),
+  updatedAt: z9.string().default(() => (/* @__PURE__ */ new Date()).toISOString())
+});
+var AccountRegistrySchema = z9.object({
+  version: z9.string().default("1.0"),
+  updatedAt: z9.string(),
+  accounts: z9.record(z9.string(), z9.record(z9.string(), AccountProfileSchema)).default({})
+});
+var DeveloperProfileSchema = z9.object({
+  name: z9.string().default("Developer"),
+  title: z9.string().optional(),
+  primaryLanguages: z9.array(z9.string()).default([]),
+  preferredStack: z9.array(z9.string()).default([]),
+  preferredPackageManager: z9.string().default("pnpm"),
+  preferredArchitecture: z9.string().default("Clean Architecture"),
+  uiPreferences: z9.string().default("Minimal, accessible, responsive"),
+  updatedAt: z9.string()
+});
+var ContextScopeSchema = z9.enum(["task", "project", "developer", "global"]);
+
 // src/core/git/git-client.ts
 import { execFile } from "child_process";
 import { promisify } from "util";
@@ -830,8 +910,8 @@ var MarkdownHelper = class {
 // src/core/search/sqlite-indexer.ts
 import path2 from "path";
 var SQLiteIndexer = class {
-  constructor(fs2) {
-    this.fs = fs2;
+  constructor(fs4) {
+    this.fs = fs4;
   }
   fs;
   db = null;
@@ -1088,8 +1168,8 @@ var SQLiteIndexer = class {
 
 // src/core/engine/state-manager.ts
 var StateManager = class {
-  constructor(fs2) {
-    this.fs = fs2;
+  constructor(fs4) {
+    this.fs = fs4;
   }
   fs;
   async getState() {
@@ -1329,8 +1409,8 @@ ${state.lastCommit || "None"}
 // src/core/engine/task-manager.ts
 import path3 from "path";
 var TaskManager = class {
-  constructor(fs2, stateManager) {
-    this.fs = fs2;
+  constructor(fs4, stateManager) {
+    this.fs = fs4;
     this.stateManager = stateManager;
   }
   fs;
@@ -1566,8 +1646,8 @@ ${MarkdownHelper.formatBulletList(task.relatedFiles)}
 // src/core/engine/decision-manager.ts
 import path4 from "path";
 var DecisionManager = class {
-  constructor(fs2) {
-    this.fs = fs2;
+  constructor(fs4) {
+    this.fs = fs4;
   }
   fs;
   get decisionsDir() {
@@ -1685,8 +1765,8 @@ ${d.date}
 // src/core/engine/failure-manager.ts
 import path5 from "path";
 var FailureManager = class {
-  constructor(fs2) {
-    this.fs = fs2;
+  constructor(fs4) {
+    this.fs = fs4;
   }
   fs;
   get failuresDir() {
@@ -1785,8 +1865,8 @@ ${MarkdownHelper.formatBulletList(f.relatedFiles)}
 // src/core/engine/session-manager.ts
 import path6 from "path";
 var SessionManager = class {
-  constructor(fs2, stateManager) {
-    this.fs = fs2;
+  constructor(fs4, stateManager) {
+    this.fs = fs4;
     this.stateManager = stateManager;
     this.redactor = new SecretRedactor();
   }
@@ -1947,8 +2027,8 @@ Commit: ${s.gitCommit || "None"}
 // src/core/engine/handover-manager.ts
 import path7 from "path";
 var HandoverManager = class {
-  constructor(fs2, git, stateManager, decisionManager, failureManager) {
-    this.fs = fs2;
+  constructor(fs4, git, stateManager, decisionManager, failureManager) {
+    this.fs = fs4;
     this.git = git;
     this.stateManager = stateManager;
     this.decisionManager = decisionManager;
@@ -2150,9 +2230,440 @@ ${nextActionLines.join("\n\n")}
   }
 };
 
+// src/core/global/device-detector.ts
+import os from "os";
+import fs2 from "fs/promises";
+import { execFile as execFile2 } from "child_process";
+import { promisify as promisify2 } from "util";
+var execFileAsync2 = promisify2(execFile2);
+var DeviceDetector = class {
+  constructor(gfs) {
+    this.gfs = gfs;
+  }
+  gfs;
+  async runCommand(cmd, args) {
+    try {
+      const { stdout } = await execFileAsync2(cmd, args);
+      return stdout.trim();
+    } catch {
+      return "";
+    }
+  }
+  async getPrettyOsName() {
+    if (os.platform() === "linux") {
+      try {
+        const osRelease = await fs2.readFile("/etc/os-release", "utf-8");
+        const match = osRelease.match(/PRETTY_NAME="?([^"\n]+)"?/);
+        if (match && match[1]) return match[1];
+      } catch {
+      }
+      return `Linux (${os.release()})`;
+    }
+    if (os.platform() === "darwin") {
+      return `macOS (${os.release()})`;
+    }
+    if (os.platform() === "win32") {
+      return `Windows (${os.release()})`;
+    }
+    return `${os.platform()} ${os.release()}`;
+  }
+  async probeEnvironment() {
+    const hostname = os.hostname();
+    const [
+      osName,
+      nodeV,
+      pnpmV,
+      npmV,
+      yarnV,
+      bunV,
+      pythonV,
+      gitV,
+      dockerV,
+      psqlV,
+      sqliteV
+    ] = await Promise.all([
+      this.getPrettyOsName(),
+      this.runCommand("node", ["-v"]),
+      this.runCommand("pnpm", ["-v"]),
+      this.runCommand("npm", ["-v"]),
+      this.runCommand("yarn", ["-v"]),
+      this.runCommand("bun", ["-v"]),
+      this.runCommand("python3", ["--version"]).then((v) => v || this.runCommand("python", ["--version"])),
+      this.runCommand("git", ["--version"]),
+      this.runCommand("docker", ["--version"]),
+      this.runCommand("psql", ["--version"]),
+      this.runCommand("sqlite3", ["--version"])
+    ]);
+    const runtimes = {};
+    if (nodeV) runtimes.node = nodeV.replace(/^v/, "");
+    if (pnpmV) runtimes.pnpm = pnpmV;
+    if (npmV) runtimes.npm = npmV;
+    if (yarnV) runtimes.yarn = yarnV;
+    if (bunV) runtimes.bun = bunV;
+    if (pythonV) runtimes.python = pythonV.replace(/^Python\s*/i, "");
+    const tools = {};
+    if (gitV) tools.git = gitV.replace(/^git version\s*/i, "");
+    if (dockerV) tools.docker = dockerV.replace(/^Docker version\s*/i, "").split(",")[0];
+    if (psqlV) tools.postgresql = psqlV.replace(/^psql \(PostgreSQL\)\s*/i, "");
+    if (sqliteV) tools.sqlite = sqliteV.split(" ")[0];
+    const shell = process.env.SHELL ? process.env.SHELL.split("/").pop() : void 0;
+    const defaultEditor = process.env.EDITOR || process.env.VISUAL || "VS Code";
+    const packageManager = runtimes.pnpm ? "pnpm" : runtimes.npm ? "npm" : "unknown";
+    return {
+      id: hostname.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+      name: `${hostname} (${osName})`,
+      hostname,
+      os: {
+        name: osName,
+        platform: os.platform(),
+        release: os.release(),
+        arch: os.arch()
+      },
+      runtimes,
+      tools,
+      shell,
+      defaultEditor,
+      packageManager,
+      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+  }
+  async getStoredEnvironment(deviceId) {
+    const id = deviceId || os.hostname().toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const deviceFile = this.gfs.resolve("devices", `${id}.yml`);
+    return this.gfs.readYaml(deviceFile);
+  }
+  async syncEnvironment(deviceId) {
+    await this.gfs.initGlobalStructure();
+    const live = await this.probeEnvironment();
+    const id = deviceId || live.id;
+    const deviceFile = this.gfs.resolve("devices", `${id}.yml`);
+    await this.gfs.writeYaml(deviceFile, live);
+    return live;
+  }
+  async detectDrift(deviceId) {
+    const stored = await this.getStoredEnvironment(deviceId);
+    const live = await this.probeEnvironment();
+    if (!stored) {
+      return [];
+    }
+    const drifts = [];
+    const allRuntimeKeys = Array.from(/* @__PURE__ */ new Set([...Object.keys(stored.runtimes), ...Object.keys(live.runtimes)]));
+    for (const r of allRuntimeKeys) {
+      const sVal = stored.runtimes[r] || "none";
+      const lVal = live.runtimes[r] || "none";
+      if (sVal !== lVal) {
+        drifts.push({
+          tool: r,
+          storedVersion: sVal,
+          currentVersion: lVal,
+          driftDetected: true
+        });
+      }
+    }
+    const allToolKeys = Array.from(/* @__PURE__ */ new Set([...Object.keys(stored.tools), ...Object.keys(live.tools)]));
+    for (const t of allToolKeys) {
+      const sVal = stored.tools[t] || "none";
+      const lVal = live.tools[t] || "none";
+      if (sVal !== lVal) {
+        drifts.push({
+          tool: t,
+          storedVersion: sVal,
+          currentVersion: lVal,
+          driftDetected: true
+        });
+      }
+    }
+    return drifts;
+  }
+};
+
+// src/core/global/toolchain-manager.ts
+var ToolchainManager = class {
+  constructor(gfs, projectFs, detector) {
+    this.gfs = gfs;
+    this.projectFs = projectFs;
+    this.detector = detector;
+  }
+  gfs;
+  projectFs;
+  detector;
+  async resolveEffectiveToolchain(taskOverride) {
+    const deviceDetector = this.detector || new DeviceDetector(this.gfs);
+    const device = await deviceDetector.getStoredEnvironment() || await deviceDetector.probeEnvironment();
+    let runtimeVersion = device.runtimes.node || process.version.replace(/^v/, "");
+    let runtimeSource = "global";
+    if (this.projectFs) {
+      const pkgPath = this.projectFs.resolve("package.json");
+      if (this.projectFs.exists(pkgPath)) {
+        try {
+          const pkg = JSON.parse(await this.projectFs.readFile(pkgPath));
+          if (pkg.engines && pkg.engines.node) {
+            runtimeVersion = pkg.engines.node;
+            runtimeSource = "project";
+          }
+        } catch {
+        }
+      }
+      const nvmrcPath = this.projectFs.resolve(".nvmrc");
+      if (this.projectFs.exists(nvmrcPath)) {
+        try {
+          const nvmrc = (await this.projectFs.readFile(nvmrcPath)).trim();
+          if (nvmrc) {
+            runtimeVersion = nvmrc.replace(/^v/, "");
+            runtimeSource = "project";
+          }
+        } catch {
+        }
+      }
+    }
+    if (taskOverride?.nodeVersion) {
+      runtimeVersion = taskOverride.nodeVersion;
+      runtimeSource = "task";
+    }
+    let pmName = device.packageManager || "pnpm";
+    let pmVersion = device.runtimes[pmName];
+    let pmSource = "global";
+    if (this.projectFs) {
+      if (this.projectFs.exists(this.projectFs.resolve("pnpm-lock.yaml"))) {
+        pmName = "pnpm";
+        pmVersion = device.runtimes.pnpm;
+        pmSource = "detected";
+      } else if (this.projectFs.exists(this.projectFs.resolve("yarn.lock"))) {
+        pmName = "yarn";
+        pmVersion = device.runtimes.yarn;
+        pmSource = "detected";
+      } else if (this.projectFs.exists(this.projectFs.resolve("bun.lockb")) || this.projectFs.exists(this.projectFs.resolve("bun.lock"))) {
+        pmName = "bun";
+        pmVersion = device.runtimes.bun;
+        pmSource = "detected";
+      } else if (this.projectFs.exists(this.projectFs.resolve("package-lock.json"))) {
+        pmName = "npm";
+        pmVersion = device.runtimes.npm;
+        pmSource = "detected";
+      }
+      const pkgPath = this.projectFs.resolve("package.json");
+      if (this.projectFs.exists(pkgPath)) {
+        try {
+          const pkg = JSON.parse(await this.projectFs.readFile(pkgPath));
+          if (pkg.packageManager) {
+            const [name, version] = pkg.packageManager.split("@");
+            pmName = name;
+            pmVersion = version;
+            pmSource = "project";
+          }
+        } catch {
+        }
+      }
+    }
+    if (taskOverride?.packageManager) {
+      pmName = taskOverride.packageManager;
+      pmSource = "task";
+    }
+    const tools = [];
+    if (device.tools.git) {
+      tools.push({ name: "git", version: device.tools.git, source: "global" });
+    }
+    if (device.tools.docker) {
+      tools.push({ name: "docker", version: device.tools.docker, source: "global" });
+    }
+    if (device.tools.postgresql) {
+      tools.push({ name: "postgresql", version: device.tools.postgresql, source: "global" });
+    }
+    if (device.tools.sqlite) {
+      tools.push({ name: "sqlite", version: device.tools.sqlite, source: "global" });
+    }
+    return {
+      runtime: {
+        name: "node",
+        version: runtimeVersion,
+        source: runtimeSource
+      },
+      packageManager: {
+        name: pmName,
+        version: pmVersion,
+        source: pmSource
+      },
+      tools
+    };
+  }
+};
+
+// src/core/global/project-registry.ts
+import path8 from "path";
+var ProjectRegistryManager = class {
+  constructor(gfs) {
+    this.gfs = gfs;
+  }
+  gfs;
+  get registryFile() {
+    return this.gfs.resolve("projects", "registry.yml");
+  }
+  async getRegistry() {
+    await this.gfs.initGlobalStructure();
+    const data = await this.gfs.readYaml(this.registryFile);
+    if (!data) {
+      const initial = {
+        version: "1.0",
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        projects: []
+      };
+      await this.gfs.writeYaml(this.registryFile, initial);
+      return initial;
+    }
+    return ProjectRegistrySchema.parse(data);
+  }
+  async saveRegistry(registry) {
+    registry.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await this.gfs.writeYaml(this.registryFile, registry);
+  }
+  async listProjects(category) {
+    const reg = await this.getRegistry();
+    if (!category) return reg.projects;
+    return reg.projects.filter((p) => p.type === category);
+  }
+  async getProject(idOrPath) {
+    const reg = await this.getRegistry();
+    const normalized = path8.resolve(idOrPath);
+    return reg.projects.find(
+      (p) => p.id === idOrPath || path8.resolve(p.path) === normalized
+    );
+  }
+  async registerProject(data) {
+    const reg = await this.getRegistry();
+    const resolvedPath = path8.resolve(data.path);
+    const id = (data.name || path8.basename(resolvedPath)).toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const existingIndex = reg.projects.findIndex(
+      (p) => p.id === id || path8.resolve(p.path) === resolvedPath
+    );
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const item = {
+      id,
+      name: data.name || path8.basename(resolvedPath),
+      type: data.type || "personal",
+      path: resolvedPath,
+      client: data.client,
+      repository: data.repository || {
+        provider: "github",
+        accountProfile: "personal"
+      },
+      stack: data.stack || [],
+      continuityEnabled: true,
+      lastAccessed: now
+    };
+    if (existingIndex !== -1) {
+      reg.projects[existingIndex] = {
+        ...reg.projects[existingIndex],
+        ...item,
+        lastAccessed: now
+      };
+    } else {
+      reg.projects.push(item);
+    }
+    await this.saveRegistry(reg);
+    return item;
+  }
+  async classifyProject(idOrPath, type, clientName) {
+    const reg = await this.getRegistry();
+    const normalized = path8.resolve(idOrPath);
+    const item = reg.projects.find(
+      (p) => p.id === idOrPath || path8.resolve(p.path) === normalized
+    );
+    if (!item) {
+      throw new Error(`Project '${idOrPath}' is not registered. Run 'continuity project register' first.`);
+    }
+    item.type = type;
+    if (clientName) item.client = clientName;
+    item.lastAccessed = (/* @__PURE__ */ new Date()).toISOString();
+    await this.saveRegistry(reg);
+    return item;
+  }
+  async touchProject(idOrPath) {
+    const reg = await this.getRegistry();
+    const normalized = path8.resolve(idOrPath);
+    const item = reg.projects.find(
+      (p) => p.id === idOrPath || path8.resolve(p.path) === normalized
+    );
+    if (item) {
+      item.lastAccessed = (/* @__PURE__ */ new Date()).toISOString();
+      await this.saveRegistry(reg);
+    }
+  }
+  // Security & Client Isolation Boundary
+  validateClientIsolation(activeProject, targetProject) {
+    if (!activeProject || !targetProject) return true;
+    if (activeProject.id === targetProject.id) return true;
+    if (activeProject.type === "client" || targetProject.type === "client") {
+      if (activeProject.client && targetProject.client) {
+        return activeProject.client.toLowerCase() === targetProject.client.toLowerCase();
+      }
+      return false;
+    }
+    return true;
+  }
+};
+
+// src/core/global/account-manager.ts
+var AccountManager = class {
+  constructor(gfs) {
+    this.gfs = gfs;
+  }
+  gfs;
+  get accountsFile() {
+    return this.gfs.resolve("accounts", "profiles.yml");
+  }
+  async getRegistry() {
+    await this.gfs.initGlobalStructure();
+    const data = await this.gfs.readYaml(this.accountsFile);
+    if (!data) {
+      const initial = {
+        version: "1.0",
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        accounts: {}
+      };
+      await this.gfs.writeYaml(this.accountsFile, initial);
+      return initial;
+    }
+    return AccountRegistrySchema.parse(data);
+  }
+  async listAccounts(provider) {
+    const reg = await this.getRegistry();
+    const list = [];
+    for (const provKey of Object.keys(reg.accounts)) {
+      if (provider && provKey !== provider) continue;
+      for (const profileKey of Object.keys(reg.accounts[provKey])) {
+        list.push(reg.accounts[provKey][profileKey]);
+      }
+    }
+    return list;
+  }
+  async getAccount(provider, profile) {
+    const reg = await this.getRegistry();
+    return reg.accounts[provider]?.[profile];
+  }
+  async setAccountProfile(profile) {
+    const reg = await this.getRegistry();
+    if (!reg.accounts[profile.provider]) {
+      reg.accounts[profile.provider] = {};
+    }
+    reg.accounts[profile.provider][profile.profile] = profile;
+    reg.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await this.gfs.writeYaml(this.accountsFile, reg);
+    return profile;
+  }
+  // AI-Safe Sanitization: Never expose credential references or tokens to LLMs
+  getAiSafeMetadata(profile) {
+    return {
+      provider: profile.provider,
+      profile: profile.profile,
+      username: profile.username,
+      status: profile.status
+    };
+  }
+};
+
 // src/core/engine/resume-engine.ts
 var ResumeEngine = class {
-  constructor(stateManager, handoverManager, sessionManager, failureManager, decisionManager, git, planManager) {
+  constructor(stateManager, handoverManager, sessionManager, failureManager, decisionManager, git, planManager, globalFs) {
     this.stateManager = stateManager;
     this.handoverManager = handoverManager;
     this.sessionManager = sessionManager;
@@ -2160,6 +2671,7 @@ var ResumeEngine = class {
     this.decisionManager = decisionManager;
     this.git = git;
     this.planManager = planManager;
+    this.globalFs = globalFs;
   }
   stateManager;
   handoverManager;
@@ -2168,7 +2680,9 @@ var ResumeEngine = class {
   decisionManager;
   git;
   planManager;
-  async buildContext() {
+  globalFs;
+  async buildContext(options = {}) {
+    const scope = options.scope || "project";
     const projectInfo = await this.stateManager.getProjectInfo();
     const state = await this.stateManager.getState();
     const gitStatus = await this.git.getStatus();
@@ -2177,6 +2691,43 @@ var ResumeEngine = class {
     const failures = await this.failureManager.listFailures();
     const decisions = await this.decisionManager.listDecisions();
     const activePlan = this.planManager ? await this.planManager.getActivePlan() : void 0;
+    let developerInfo;
+    let environmentInfo;
+    let category;
+    let accountMetadata;
+    if (this.globalFs && scope !== "task") {
+      try {
+        const projectFs = this.stateManager.fs;
+        const toolchainMgr = new ToolchainManager(this.globalFs, projectFs);
+        const effective = await toolchainMgr.resolveEffectiveToolchain();
+        environmentInfo = {
+          os: process.platform,
+          runtime: `${effective.runtime.name} ${effective.runtime.version} (${effective.runtime.source})`,
+          packageManager: `${effective.packageManager.name} (${effective.packageManager.source})`
+        };
+        const regMgr = new ProjectRegistryManager(this.globalFs);
+        const regProject = await regMgr.getProject(projectFs.rootDir || process.cwd());
+        if (regProject) {
+          category = regProject.type;
+        }
+        const acctMgr = new AccountManager(this.globalFs);
+        const accounts = await acctMgr.listAccounts("github");
+        if (accounts.length > 0) {
+          accountMetadata = acctMgr.getAiSafeMetadata(accounts[0]);
+        }
+        if (scope === "developer" || scope === "global") {
+          const devProfilePath = this.globalFs.resolve("profile", "developer.md");
+          if (this.globalFs.exists(devProfilePath)) {
+            const rawDev = await this.globalFs.readFile(devProfilePath);
+            const nameMatch = rawDev.match(/Name:\s*([^\n]+)/i);
+            developerInfo = {
+              name: nameMatch ? nameMatch[1].trim() : "Developer"
+            };
+          }
+        }
+      } catch {
+      }
+    }
     let nextAction = latestHandover?.nextAction || (typeof state.nextAction === "object" ? state.nextAction : {
       problem: state.nextAction || "Continue work",
       expectedSolution: "Proceed to next task milestone",
@@ -2217,9 +2768,14 @@ var ResumeEngine = class {
       };
     }
     return {
+      scope,
       project: projectInfo.name || state.project,
+      category,
       purpose: projectInfo.purpose || "",
       architectureSummary: projectInfo.architecture || (projectInfo.stack.length > 0 ? projectInfo.stack.join(", ") : "Standard"),
+      developer: developerInfo,
+      environment: environmentInfo,
+      accountMetadata,
       branch: gitStatus.branch || state.currentBranch,
       commit: gitStatus.commit?.shortHash || state.lastCommit,
       currentTask: state.currentTask,
@@ -2241,11 +2797,16 @@ var ResumeEngine = class {
   formatCompact(ctx) {
     const lines = [
       "================ CONTINUITY RESUME ================\n",
-      `Project: ${ctx.project}`,
+      `Project: ${ctx.project}${ctx.category ? ` [Category: ${ctx.category.toUpperCase()}]` : ""}`
+    ];
+    if (ctx.environment) {
+      lines.push(`Environment: ${ctx.environment.runtime} | ${ctx.environment.packageManager}`);
+    }
+    lines.push(
       `Branch: ${ctx.branch}${ctx.commit ? ` (${ctx.commit})` : ""}`,
       `Current Task: ${ctx.currentTask} [${ctx.progress}% completed]`,
       `Status: ${ctx.currentBlocker ? `BLOCKED - ${ctx.currentBlocker}` : "In Progress"}`
-    ];
+    );
     if (ctx.plan) {
       lines.push(
         `Active Plan: ${ctx.plan.title} [${ctx.plan.progressPercentage}% completed]`,
@@ -2287,14 +2848,26 @@ ${ctx.nextAction.constraints.map((c) => `  * ${c}`).join("\n")}` : "",
   formatFullMarkdown(ctx) {
     const lines = [
       "# Continuity Resume Context",
-      "\n## 1. Project Identity",
+      "\n## 1. Project & Environment",
       `- **Name**: ${ctx.project}`,
+      `- **Category**: ${ctx.category ? ctx.category.toUpperCase() : "Default"}`,
       `- **Purpose**: ${ctx.purpose || "Not specified"}`,
-      `- **Architecture**: ${ctx.architectureSummary}`,
+      `- **Architecture**: ${ctx.architectureSummary}`
+    ];
+    if (ctx.environment) {
+      lines.push(
+        `- **Runtime**: \`${ctx.environment.runtime}\``,
+        `- **Package Manager**: \`${ctx.environment.packageManager}\``
+      );
+    }
+    if (ctx.accountMetadata) {
+      lines.push(`- **Repository Account**: ${ctx.accountMetadata.username} (${ctx.accountMetadata.profile})`);
+    }
+    lines.push(
       `- **Branch**: \`${ctx.branch}\``,
       `- **Commit**: \`${ctx.commit || "unknown"}\``,
       `- **Uncommitted Changes**: ${ctx.hasUncommittedChanges ? "Yes" : "No"}`
-    ];
+    );
     if (ctx.plan) {
       lines.push(
         "\n## 2. Active Plan",
@@ -2347,10 +2920,10 @@ ${MarkdownHelper.formatBulletList(ctx.nextAction.constraints, "  *")}` : ""
 };
 
 // src/core/engine/explain-engine.ts
-import path8 from "path";
+import path9 from "path";
 var ExplainEngine = class {
-  constructor(fs2, git, taskManager, decisionManager, failureManager, sessionManager) {
-    this.fs = fs2;
+  constructor(fs4, git, taskManager, decisionManager, failureManager, sessionManager) {
+    this.fs = fs4;
     this.git = git;
     this.taskManager = taskManager;
     this.decisionManager = decisionManager;
@@ -2365,7 +2938,7 @@ var ExplainEngine = class {
   sessionManager;
   async explain(targetPath) {
     const fullPath = this.fs.resolve(targetPath);
-    const relativePath = path8.relative(this.fs.rootDir, fullPath);
+    const relativePath = path9.relative(this.fs.rootDir, fullPath);
     const exists = this.fs.exists(fullPath);
     const commits = await this.git.getFileCommits(relativePath, 20);
     const lastCommit = commits[0];
@@ -2380,7 +2953,7 @@ var ExplainEngine = class {
     const decisions = await this.decisionManager.listDecisions();
     const relatedDecisions = [];
     for (const d of decisions) {
-      if (d.decision.includes(relativePath) || d.why.includes(relativePath) || d.title.toLowerCase().includes(path8.basename(relativePath, path8.extname(relativePath)).toLowerCase())) {
+      if (d.decision.includes(relativePath) || d.why.includes(relativePath) || d.title.toLowerCase().includes(path9.basename(relativePath, path9.extname(relativePath)).toLowerCase())) {
         relatedDecisions.push(`${d.id}: ${d.title}`);
       }
     }
@@ -2438,17 +3011,19 @@ var ExplainEngine = class {
 
 // src/core/engine/doctor-engine.ts
 var DoctorEngine = class {
-  constructor(fs2, git, stateManager, taskManager) {
-    this.fs = fs2;
+  constructor(fs4, git, stateManager, taskManager, globalFs) {
+    this.fs = fs4;
     this.git = git;
     this.stateManager = stateManager;
     this.taskManager = taskManager;
+    this.globalFs = globalFs;
     this.redactor = new SecretRedactor();
   }
   fs;
   git;
   stateManager;
   taskManager;
+  globalFs;
   redactor;
   async runDiagnostics() {
     const checks = [];
@@ -2546,6 +3121,37 @@ var DoctorEngine = class {
         warning: leakedSecrets > 0
       });
     }
+    if (this.globalFs) {
+      const gInitialized = this.globalFs.isInitialized();
+      checks.push({
+        name: "Global Memory (~/.continuity)",
+        passed: gInitialized,
+        message: gInitialized ? `Global memory is active at ${this.globalFs.globalDir}` : `Global memory not initialized. Run "continuity device --sync" or "continuity profile"`,
+        warning: !gInitialized
+      });
+      if (gInitialized) {
+        try {
+          const detector = new DeviceDetector(this.globalFs);
+          const drifts = await detector.detectDrift();
+          if (drifts.length > 0) {
+            const driftMsgs = drifts.map((d) => `${d.tool}: stored ${d.storedVersion} -> live ${d.currentVersion}`).join("; ");
+            checks.push({
+              name: "Environment Drift",
+              passed: false,
+              message: `Drift detected (${driftMsgs}). Run "continuity device --sync" to update`,
+              warning: true
+            });
+          } else {
+            checks.push({
+              name: "Environment Drift",
+              passed: true,
+              message: "Machine environment matches stored device snapshot"
+            });
+          }
+        } catch {
+        }
+      }
+    }
     const overallHealthy = checks.every((c) => c.passed || c.warning);
     return {
       overallHealthy,
@@ -2555,10 +3161,10 @@ var DoctorEngine = class {
 };
 
 // src/core/engine/plan-manager.ts
-import path9 from "path";
+import path10 from "path";
 var PlanManager = class {
-  constructor(fs2) {
-    this.fs = fs2;
+  constructor(fs4) {
+    this.fs = fs4;
   }
   fs;
   get plansDir() {
@@ -2568,22 +3174,26 @@ var PlanManager = class {
     return title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").substring(0, 50);
   }
   getPlanDir(status) {
-    return path9.join(this.plansDir, status);
+    return path10.join(this.plansDir, status);
   }
   async createPlan(data) {
-    await this.fs.ensureDir(path9.join(this.plansDir, "active"));
-    await this.fs.ensureDir(path9.join(this.plansDir, "blocked"));
-    await this.fs.ensureDir(path9.join(this.plansDir, "completed"));
-    await this.fs.ensureDir(path9.join(this.plansDir, "abandoned"));
+    await this.fs.ensureDir(path10.join(this.plansDir, "active"));
+    await this.fs.ensureDir(path10.join(this.plansDir, "blocked"));
+    await this.fs.ensureDir(path10.join(this.plansDir, "completed"));
+    await this.fs.ensureDir(path10.join(this.plansDir, "abandoned"));
     const id = this.slugify(data.title);
     const now = (/* @__PURE__ */ new Date()).toISOString();
-    const steps = data.steps.map((s, index) => ({
-      id: `step-${index + 1}`,
-      description: s.description,
-      status: index === 0 ? "in_progress" : "pending",
-      commits: [],
-      files: s.files || []
-    }));
+    const steps = data.steps.map((s, index) => {
+      const description = typeof s === "string" ? s : s.description;
+      const files = typeof s === "string" ? [] : s.files || [];
+      return {
+        id: `step-${index + 1}`,
+        description,
+        status: index === 0 ? "in_progress" : "pending",
+        commits: [],
+        files
+      };
+    });
     const acceptanceCriteria = (data.acceptanceCriteria || []).map((ac, index) => ({
       id: `crit-${index + 1}`,
       description: ac,
@@ -2611,7 +3221,7 @@ var PlanManager = class {
   async getPlan(id) {
     const statuses = ["active", "blocked", "completed", "abandoned", "planned"];
     for (const status of statuses) {
-      const planPath = path9.join(this.getPlanDir(status), `${id}.md`);
+      const planPath = path10.join(this.getPlanDir(status), `${id}.md`);
       if (this.fs.exists(planPath)) {
         const raw = await this.fs.readFile(planPath);
         return this.parsePlanMarkdown(raw, id, status);
@@ -2625,7 +3235,7 @@ var PlanManager = class {
     const files = await this.fs.listFiles(activeDir, ".md");
     if (files.length === 0) return void 0;
     const raw = await this.fs.readFile(files[0]);
-    return this.parsePlanMarkdown(raw, path9.basename(files[0], ".md"), "active");
+    return this.parsePlanMarkdown(raw, path10.basename(files[0], ".md"), "active");
   }
   async updatePlan(id, updates) {
     const plan = await this.getPlan(id);
@@ -2664,8 +3274,8 @@ var PlanManager = class {
     }
     plan.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
     if (updates.status && updates.status !== previousStatus) {
-      const oldPath = path9.join(this.getPlanDir(previousStatus), `${plan.id}.md`);
-      const newPath = path9.join(this.getPlanDir(updates.status), `${plan.id}.md`);
+      const oldPath = path10.join(this.getPlanDir(previousStatus), `${plan.id}.md`);
+      const newPath = path10.join(this.getPlanDir(updates.status), `${plan.id}.md`);
       await this.fs.ensureDir(this.getPlanDir(updates.status));
       if (this.fs.exists(oldPath)) {
         await this.fs.deleteFile(oldPath);
@@ -2688,8 +3298,8 @@ var PlanManager = class {
     for (const crit of plan.acceptanceCriteria) {
       crit.satisfied = true;
     }
-    const oldPath = path9.join(this.getPlanDir("active"), `${plan.id}.md`);
-    const newPath = path9.join(this.getPlanDir("completed"), `${plan.id}.md`);
+    const oldPath = path10.join(this.getPlanDir("active"), `${plan.id}.md`);
+    const newPath = path10.join(this.getPlanDir("completed"), `${plan.id}.md`);
     await this.fs.ensureDir(this.getPlanDir("completed"));
     if (this.fs.exists(oldPath)) {
       await this.fs.deleteFile(oldPath);
@@ -2720,7 +3330,7 @@ var PlanManager = class {
       const dir = this.getPlanDir(status);
       const files = await this.fs.listFiles(dir, ".md");
       for (const file of files) {
-        const id = path9.basename(file, ".md");
+        const id = path10.basename(file, ".md");
         const raw = await this.fs.readFile(file);
         const plan = this.parsePlanMarkdown(raw, id, status);
         if (plan) result[status].push(plan);
@@ -2730,7 +3340,7 @@ var PlanManager = class {
   }
   savePlanFile(plan) {
     const dir = this.getPlanDir(plan.status);
-    const filePath = path9.join(dir, `${plan.id}.md`);
+    const filePath = path10.join(dir, `${plan.id}.md`);
     const content = this.formatPlanMarkdown(plan);
     return this.fs.writeFile(filePath, content);
   }
@@ -3051,14 +3661,14 @@ Next: ${session.nextStep || "None"}`,
 };
 
 // src/core/verify/verification-engine.ts
-import { execFile as execFile2 } from "child_process";
-import { promisify as promisify2 } from "util";
-var execFileAsync2 = promisify2(execFile2);
+import { execFile as execFile3 } from "child_process";
+import { promisify as promisify3 } from "util";
+var execFileAsync3 = promisify3(execFile3);
 var VerificationEngine = class {
-  constructor(planManager, git, fs2) {
+  constructor(planManager, git, fs4) {
     this.planManager = planManager;
     this.git = git;
-    this.fs = fs2;
+    this.fs = fs4;
   }
   planManager;
   git;
@@ -3112,7 +3722,7 @@ var VerificationEngine = class {
           const pkg = JSON.parse(await this.fs.readFile(pkgPath));
           if (pkg.scripts && pkg.scripts.test) {
             try {
-              const { stdout } = await execFileAsync2("npm", ["test"], { cwd: this.fs.rootDir });
+              const { stdout } = await execFileAsync3("npm", ["test"], { cwd: this.fs.rootDir });
               testsPassed = true;
               testOutput = stdout.slice(-300);
             } catch (err) {
@@ -3155,6 +3765,341 @@ var VerificationEngine = class {
       checks,
       nextRecommendedAction
     };
+  }
+};
+
+// src/core/global/global-file-system.ts
+import fs3 from "fs/promises";
+import { existsSync as existsSync2 } from "fs";
+import path11 from "path";
+import os2 from "os";
+import yaml from "yaml";
+var GlobalFileSystem = class {
+  globalDir;
+  constructor(customGlobalDir) {
+    this.globalDir = customGlobalDir || process.env.CONTINUITY_GLOBAL_DIR || path11.join(os2.homedir(), ".continuity");
+  }
+  resolve(...subpaths) {
+    return path11.join(this.globalDir, ...subpaths);
+  }
+  exists(filePath) {
+    return existsSync2(filePath || this.globalDir);
+  }
+  isInitialized() {
+    return this.exists() && this.exists(this.resolve("config.yml")) && this.exists(this.resolve("projects", "registry.yml"));
+  }
+  async ensureDir(dirPath) {
+    await fs3.mkdir(dirPath, { recursive: true });
+  }
+  async readFile(filePath) {
+    return fs3.readFile(filePath, "utf-8");
+  }
+  async writeFile(filePath, content) {
+    await this.ensureDir(path11.dirname(filePath));
+    const tmpPath = `${filePath}.${Date.now()}.${Math.random().toString(36).substring(7)}.tmp`;
+    await fs3.writeFile(tmpPath, content, "utf-8");
+    await fs3.rename(tmpPath, filePath);
+  }
+  async readYaml(filePath) {
+    if (!this.exists(filePath)) return void 0;
+    const content = await this.readFile(filePath);
+    try {
+      return yaml.parse(content);
+    } catch {
+      return void 0;
+    }
+  }
+  async writeYaml(filePath, data) {
+    const serialized = yaml.stringify(data);
+    await this.writeFile(filePath, serialized);
+  }
+  async listFiles(dirPath, extension) {
+    if (!this.exists(dirPath)) return [];
+    const entries = await fs3.readdir(dirPath, { withFileTypes: true });
+    const files = [];
+    for (const entry of entries) {
+      if (entry.isFile()) {
+        if (!extension || entry.name.endsWith(extension)) {
+          files.push(path11.join(dirPath, entry.name));
+        }
+      } else if (entry.isDirectory()) {
+        const sub = await this.listFiles(path11.join(dirPath, entry.name), extension);
+        files.push(...sub);
+      }
+    }
+    return files;
+  }
+  async initGlobalStructure() {
+    await this.ensureDir(this.globalDir);
+    await this.ensureDir(this.resolve("profile"));
+    await this.ensureDir(this.resolve("devices"));
+    await this.ensureDir(this.resolve("toolchain"));
+    await this.ensureDir(this.resolve("accounts"));
+    await this.ensureDir(this.resolve("projects"));
+    await this.ensureDir(this.resolve("knowledge", "ai"));
+    await this.ensureDir(this.resolve("knowledge", "architecture"));
+    await this.ensureDir(this.resolve("knowledge", "frontend"));
+    await this.ensureDir(this.resolve("knowledge", "backend"));
+    await this.ensureDir(this.resolve("knowledge", "devops"));
+    await this.ensureDir(this.resolve("workflows"));
+    await this.ensureDir(this.resolve("history", "technologies"));
+    await this.ensureDir(this.resolve("history", "lessons"));
+    await this.ensureDir(this.resolve("history", "milestones"));
+    const configPath = this.resolve("config.yml");
+    if (!this.exists(configPath)) {
+      await this.writeYaml(configPath, {
+        version: "3.0",
+        activeDevice: os2.hostname(),
+        defaultPackageManager: "pnpm",
+        defaultProjectType: "personal",
+        isolation: {
+          clientIsolationStrict: true
+        }
+      });
+    }
+    const devProfilePath = this.resolve("profile", "developer.md");
+    if (!this.exists(devProfilePath)) {
+      await this.writeFile(
+        devProfilePath,
+        `# Developer Profile
+
+Name: ${os2.userInfo().username || "Developer"}
+Role: Software Engineer
+Primary Languages: TypeScript, JavaScript, Python
+Preferred Architecture: Clean Architecture / Ports and Adapters
+UI Preferences: Minimal, fast, accessible, responsive
+`
+      );
+    }
+    const prefsPath = this.resolve("profile", "preferences.md");
+    if (!this.exists(prefsPath)) {
+      await this.writeFile(
+        prefsPath,
+        `# Developer Preferences
+
+Preferred Package Manager: pnpm
+Formatting: 2 spaces, single quotes, semicolons
+Testing: Vitest / Jest
+Git Workflow: Conventional commits (feat, fix, docs, chore)
+Secret Policy: Zero plaintext secrets; use OS keychain references
+`
+      );
+    }
+    const registryPath = this.resolve("projects", "registry.yml");
+    if (!this.exists(registryPath)) {
+      const defaultRegistry = {
+        version: "1.0",
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        projects: []
+      };
+      await this.writeYaml(registryPath, defaultRegistry);
+    }
+    const accountsPath = this.resolve("accounts", "profiles.yml");
+    if (!this.exists(accountsPath)) {
+      await this.writeYaml(accountsPath, {
+        version: "1.0",
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        accounts: {
+          github: {
+            personal: {
+              provider: "github",
+              profile: "personal",
+              username: os2.userInfo().username || "developer",
+              credentialRef: "keychain://github/personal",
+              status: "authenticated",
+              scopes: ["repo", "read:user"],
+              updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+            }
+          }
+        }
+      });
+    }
+    const runtimesPath = this.resolve("toolchain", "runtimes.yml");
+    if (!this.exists(runtimesPath)) {
+      await this.writeYaml(runtimesPath, {
+        defaultNode: process.version,
+        defaultPackageManager: "pnpm",
+        preferredDatabase: "postgresql"
+      });
+    }
+  }
+};
+
+// src/core/global/knowledge-manager.ts
+import path12 from "path";
+var KnowledgeManager = class {
+  constructor(gfs) {
+    this.gfs = gfs;
+  }
+  gfs;
+  get knowledgeDir() {
+    return this.gfs.resolve("knowledge");
+  }
+  get historyDir() {
+    return this.gfs.resolve("history");
+  }
+  async listArticles(category) {
+    await this.gfs.initGlobalStructure();
+    const articles = [];
+    const targetDir = category ? path12.join(this.knowledgeDir, category) : this.knowledgeDir;
+    const files = await this.gfs.listFiles(targetDir, ".md");
+    for (const file of files) {
+      const content = await this.gfs.readFile(file);
+      const relative = path12.relative(this.knowledgeDir, file);
+      const parts = relative.split(path12.sep);
+      const cat = parts.length > 1 ? parts[0] : "general";
+      const name = path12.basename(file, ".md");
+      const titleMatch = content.match(/^#\s+(.+)$/m);
+      const title = titleMatch ? titleMatch[1].trim() : name;
+      articles.push({
+        category: cat,
+        name,
+        path: file,
+        content,
+        title
+      });
+    }
+    return articles;
+  }
+  async saveArticle(category, name, content) {
+    await this.gfs.initGlobalStructure();
+    const safeName = name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const safeCat = category.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const targetPath = path12.join(this.knowledgeDir, safeCat, `${safeName}.md`);
+    await this.gfs.writeFile(targetPath, content);
+    return targetPath;
+  }
+  async getArticle(category, name) {
+    const safeName = name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const targetPath = path12.join(this.knowledgeDir, category, `${safeName}.md`);
+    if (!this.gfs.exists(targetPath)) return void 0;
+    const content = await this.gfs.readFile(targetPath);
+    const titleMatch = content.match(/^#\s+(.+)$/m);
+    return {
+      category,
+      name: safeName,
+      path: targetPath,
+      content,
+      title: titleMatch ? titleMatch[1].trim() : safeName
+    };
+  }
+};
+
+// src/core/global/bootstrap-engine.ts
+var BootstrapEngine = class {
+  constructor(fs4, gfs) {
+    this.fs = fs4;
+    this.gfs = gfs;
+  }
+  fs;
+  gfs;
+  async checkEnvironment() {
+    const detector = new DeviceDetector(this.gfs);
+    const live = await detector.probeEnvironment();
+    const checks = [];
+    let projectName = "Current Project";
+    let requiredNode = ">=20.0.0";
+    let requiredPm = "pnpm";
+    const requiredTools = ["git"];
+    const pkgPath = this.fs.resolve("package.json");
+    if (this.fs.exists(pkgPath)) {
+      try {
+        const pkg = JSON.parse(await this.fs.readFile(pkgPath));
+        if (pkg.name) projectName = pkg.name;
+        if (pkg.engines && pkg.engines.node) requiredNode = pkg.engines.node;
+        if (pkg.packageManager) {
+          requiredPm = pkg.packageManager.split("@")[0];
+        } else if (this.fs.exists(this.fs.resolve("pnpm-lock.yaml"))) {
+          requiredPm = "pnpm";
+        } else if (this.fs.exists(this.fs.resolve("package-lock.json"))) {
+          requiredPm = "npm";
+        } else if (this.fs.exists(this.fs.resolve("yarn.lock"))) {
+          requiredPm = "yarn";
+        } else if (this.fs.exists(this.fs.resolve("bun.lockb"))) {
+          requiredPm = "bun";
+        }
+        const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+        if (deps.pg || deps["@prisma/client"] || deps.typeorm || deps.drizzle) {
+          requiredTools.push("postgresql");
+        }
+        if (deps.sqlite3 || deps["better-sqlite3"]) {
+          requiredTools.push("sqlite");
+        }
+      } catch {
+      }
+    }
+    const installedNode = live.runtimes.node;
+    const nodeSatisfied = !!installedNode;
+    checks.push({
+      tool: "Node.js",
+      required: requiredNode,
+      installed: installedNode || "Not found",
+      satisfied: nodeSatisfied,
+      recommendation: !nodeSatisfied ? "Install Node.js via nvm, fnm, or system package manager" : void 0
+    });
+    const installedPm = live.runtimes[requiredPm];
+    const pmSatisfied = !!installedPm;
+    checks.push({
+      tool: `Package Manager (${requiredPm})`,
+      required: requiredPm,
+      installed: installedPm ? `${requiredPm} ${installedPm}` : "Not found",
+      satisfied: pmSatisfied,
+      recommendation: !pmSatisfied ? `Run: corepack enable && corepack use ${requiredPm}@latest` : void 0
+    });
+    const installedGit = live.tools.git;
+    checks.push({
+      tool: "Git",
+      required: ">=2.0.0",
+      installed: installedGit || "Not found",
+      satisfied: !!installedGit,
+      recommendation: !installedGit ? "Install Git via your package manager (e.g. sudo dnf install git)" : void 0
+    });
+    for (const tool of requiredTools) {
+      if (tool === "git") continue;
+      const installedTool = live.tools[tool];
+      const satisfied = !!installedTool;
+      checks.push({
+        tool: tool.toUpperCase(),
+        required: "Installed",
+        installed: installedTool || "Not found",
+        satisfied,
+        recommendation: !satisfied ? `Optional client tool '${tool}' is recommended for this project.` : void 0
+      });
+    }
+    const missingCount = checks.filter((c) => !c.satisfied).length;
+    return {
+      projectName,
+      checks,
+      missingCount,
+      allSatisfied: missingCount === 0
+    };
+  }
+  async generateConfig(type) {
+    const report = await this.checkEnvironment();
+    let nodeVer = "22.x";
+    const nodeCheck = report.checks.find((c) => c.tool === "Node.js");
+    if (nodeCheck && nodeCheck.installed && nodeCheck.installed !== "Not found") {
+      nodeVer = nodeCheck.installed;
+    }
+    let filePath = "";
+    let content = "";
+    if (type === "nvm") {
+      filePath = this.fs.resolve(".nvmrc");
+      content = `v${nodeVer}
+`;
+    } else if (type === "tool-versions") {
+      filePath = this.fs.resolve(".tool-versions");
+      content = `nodejs ${nodeVer}
+`;
+    } else if (type === "mise") {
+      filePath = this.fs.resolve("mise.toml");
+      content = `[tools]
+node = "${nodeVer}"
+pnpm = "latest"
+`;
+    }
+    await this.fs.writeFile(filePath, content);
+    return { path: filePath, content };
   }
 };
 
@@ -3408,10 +4353,15 @@ Generate handover on completion using \`continuity handover\`.
 `;
 export {
   AcceptanceCriterionSchema,
+  AccountManager,
+  AccountProfileSchema,
+  AccountRegistrySchema,
+  BootstrapEngine,
   CLAUDE_CODE_SNIPPET,
   CLINE_RULES_SNIPPET,
   CURSOR_RULES_MDC,
   ContextRanker,
+  ContextScopeSchema,
   ContinuityConfigSchema,
   ContinuityStateSchema,
   DEFAULT_ARCHITECTURE_MD,
@@ -3423,21 +4373,30 @@ export {
   DEFAULT_STATE_MD,
   DecisionManager,
   DecisionSchema,
+  DeveloperProfileSchema,
+  DeviceDetector,
+  DeviceEnvironmentSchema,
   DoctorEngine,
   ExplainEngine,
   FailureManager,
   FailureSchema,
   FileSystem,
   GitClient,
+  GlobalFileSystem,
   HandoverManager,
   HandoverSchema,
+  KnowledgeManager,
   MarkdownHelper,
   NextActionSchema,
   PlanManager,
   PlanSchema,
   PlanStatusSchema,
   PlanStepSchema,
+  ProjectCategorySchema,
   ProjectInfoSchema,
+  ProjectRegistryItemSchema,
+  ProjectRegistryManager,
+  ProjectRegistrySchema,
   ResumeEngine,
   SQLiteIndexer,
   SecretRedactor,
@@ -3447,6 +4406,7 @@ export {
   TaskItemSchema,
   TaskManager,
   TaskStatusSchema,
+  ToolchainManager,
   UNIVERSAL_SKILL_MD,
   VerificationEngine,
   WINDSURF_RULES_SNIPPET

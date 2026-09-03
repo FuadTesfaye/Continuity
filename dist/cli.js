@@ -5,7 +5,7 @@ import { Command } from "commander";
 import pc2 from "picocolors";
 
 // src/cli/commands/init.ts
-import path3 from "path";
+import path5 from "path";
 
 // src/core/storage/file-system.ts
 import fs from "fs/promises";
@@ -413,8 +413,8 @@ ${diffLines}`;
 // src/core/search/sqlite-indexer.ts
 import path2 from "path";
 var SQLiteIndexer = class {
-  constructor(fs2) {
-    this.fs = fs2;
+  constructor(fs4) {
+    this.fs = fs4;
   }
   fs;
   db = null;
@@ -969,73 +969,426 @@ Record failed attempts into \`.continuity/failures/\`.
 Generate handover on completion using \`continuity handover\`.
 `;
 
+// src/core/global/global-file-system.ts
+import fs2 from "fs/promises";
+import { existsSync as existsSync2 } from "fs";
+import path3 from "path";
+import os from "os";
+import yaml from "yaml";
+var GlobalFileSystem = class {
+  globalDir;
+  constructor(customGlobalDir) {
+    this.globalDir = customGlobalDir || process.env.CONTINUITY_GLOBAL_DIR || path3.join(os.homedir(), ".continuity");
+  }
+  resolve(...subpaths) {
+    return path3.join(this.globalDir, ...subpaths);
+  }
+  exists(filePath) {
+    return existsSync2(filePath || this.globalDir);
+  }
+  isInitialized() {
+    return this.exists() && this.exists(this.resolve("config.yml")) && this.exists(this.resolve("projects", "registry.yml"));
+  }
+  async ensureDir(dirPath) {
+    await fs2.mkdir(dirPath, { recursive: true });
+  }
+  async readFile(filePath) {
+    return fs2.readFile(filePath, "utf-8");
+  }
+  async writeFile(filePath, content) {
+    await this.ensureDir(path3.dirname(filePath));
+    const tmpPath = `${filePath}.${Date.now()}.${Math.random().toString(36).substring(7)}.tmp`;
+    await fs2.writeFile(tmpPath, content, "utf-8");
+    await fs2.rename(tmpPath, filePath);
+  }
+  async readYaml(filePath) {
+    if (!this.exists(filePath)) return void 0;
+    const content = await this.readFile(filePath);
+    try {
+      return yaml.parse(content);
+    } catch {
+      return void 0;
+    }
+  }
+  async writeYaml(filePath, data) {
+    const serialized = yaml.stringify(data);
+    await this.writeFile(filePath, serialized);
+  }
+  async listFiles(dirPath, extension) {
+    if (!this.exists(dirPath)) return [];
+    const entries = await fs2.readdir(dirPath, { withFileTypes: true });
+    const files = [];
+    for (const entry of entries) {
+      if (entry.isFile()) {
+        if (!extension || entry.name.endsWith(extension)) {
+          files.push(path3.join(dirPath, entry.name));
+        }
+      } else if (entry.isDirectory()) {
+        const sub = await this.listFiles(path3.join(dirPath, entry.name), extension);
+        files.push(...sub);
+      }
+    }
+    return files;
+  }
+  async initGlobalStructure() {
+    await this.ensureDir(this.globalDir);
+    await this.ensureDir(this.resolve("profile"));
+    await this.ensureDir(this.resolve("devices"));
+    await this.ensureDir(this.resolve("toolchain"));
+    await this.ensureDir(this.resolve("accounts"));
+    await this.ensureDir(this.resolve("projects"));
+    await this.ensureDir(this.resolve("knowledge", "ai"));
+    await this.ensureDir(this.resolve("knowledge", "architecture"));
+    await this.ensureDir(this.resolve("knowledge", "frontend"));
+    await this.ensureDir(this.resolve("knowledge", "backend"));
+    await this.ensureDir(this.resolve("knowledge", "devops"));
+    await this.ensureDir(this.resolve("workflows"));
+    await this.ensureDir(this.resolve("history", "technologies"));
+    await this.ensureDir(this.resolve("history", "lessons"));
+    await this.ensureDir(this.resolve("history", "milestones"));
+    const configPath = this.resolve("config.yml");
+    if (!this.exists(configPath)) {
+      await this.writeYaml(configPath, {
+        version: "3.0",
+        activeDevice: os.hostname(),
+        defaultPackageManager: "pnpm",
+        defaultProjectType: "personal",
+        isolation: {
+          clientIsolationStrict: true
+        }
+      });
+    }
+    const devProfilePath = this.resolve("profile", "developer.md");
+    if (!this.exists(devProfilePath)) {
+      await this.writeFile(
+        devProfilePath,
+        `# Developer Profile
+
+Name: ${os.userInfo().username || "Developer"}
+Role: Software Engineer
+Primary Languages: TypeScript, JavaScript, Python
+Preferred Architecture: Clean Architecture / Ports and Adapters
+UI Preferences: Minimal, fast, accessible, responsive
+`
+      );
+    }
+    const prefsPath = this.resolve("profile", "preferences.md");
+    if (!this.exists(prefsPath)) {
+      await this.writeFile(
+        prefsPath,
+        `# Developer Preferences
+
+Preferred Package Manager: pnpm
+Formatting: 2 spaces, single quotes, semicolons
+Testing: Vitest / Jest
+Git Workflow: Conventional commits (feat, fix, docs, chore)
+Secret Policy: Zero plaintext secrets; use OS keychain references
+`
+      );
+    }
+    const registryPath = this.resolve("projects", "registry.yml");
+    if (!this.exists(registryPath)) {
+      const defaultRegistry = {
+        version: "1.0",
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        projects: []
+      };
+      await this.writeYaml(registryPath, defaultRegistry);
+    }
+    const accountsPath = this.resolve("accounts", "profiles.yml");
+    if (!this.exists(accountsPath)) {
+      await this.writeYaml(accountsPath, {
+        version: "1.0",
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        accounts: {
+          github: {
+            personal: {
+              provider: "github",
+              profile: "personal",
+              username: os.userInfo().username || "developer",
+              credentialRef: "keychain://github/personal",
+              status: "authenticated",
+              scopes: ["repo", "read:user"],
+              updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+            }
+          }
+        }
+      });
+    }
+    const runtimesPath = this.resolve("toolchain", "runtimes.yml");
+    if (!this.exists(runtimesPath)) {
+      await this.writeYaml(runtimesPath, {
+        defaultNode: process.version,
+        defaultPackageManager: "pnpm",
+        preferredDatabase: "postgresql"
+      });
+    }
+  }
+};
+
+// src/core/global/project-registry.ts
+import path4 from "path";
+
+// src/core/types/global.ts
+import { z } from "zod";
+var ProjectCategorySchema = z.enum([
+  "personal",
+  "client",
+  "work",
+  "open-source",
+  "learning",
+  "experimental",
+  "archived"
+]);
+var ProjectRegistryItemSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  type: ProjectCategorySchema.default("personal"),
+  path: z.string(),
+  client: z.string().optional(),
+  repository: z.object({
+    provider: z.string().default("github"),
+    accountProfile: z.string().default("personal"),
+    owner: z.string().optional(),
+    name: z.string().optional(),
+    url: z.string().optional()
+  }).optional(),
+  stack: z.array(z.string()).default([]),
+  continuityEnabled: z.boolean().default(true),
+  lastAccessed: z.string()
+});
+var ProjectRegistrySchema = z.object({
+  version: z.string().default("1.0"),
+  updatedAt: z.string(),
+  projects: z.array(ProjectRegistryItemSchema).default([])
+});
+var DeviceEnvironmentSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  hostname: z.string(),
+  os: z.object({
+    name: z.string(),
+    platform: z.string(),
+    release: z.string(),
+    arch: z.string()
+  }),
+  runtimes: z.record(z.string(), z.string()).default({}),
+  tools: z.record(z.string(), z.string()).default({}),
+  shell: z.string().optional(),
+  defaultEditor: z.string().optional(),
+  packageManager: z.string().default("pnpm"),
+  updatedAt: z.string()
+});
+var AccountProfileSchema = z.object({
+  provider: z.string(),
+  // e.g. github, npm, docker, aws
+  profile: z.string(),
+  // e.g. personal, work, client-acme
+  username: z.string(),
+  email: z.string().optional(),
+  credentialRef: z.string(),
+  // e.g. keychain://github/personal
+  status: z.enum(["authenticated", "unauthenticated", "unknown"]).default("authenticated"),
+  scopes: z.array(z.string()).default([]),
+  updatedAt: z.string().default(() => (/* @__PURE__ */ new Date()).toISOString())
+});
+var AccountRegistrySchema = z.object({
+  version: z.string().default("1.0"),
+  updatedAt: z.string(),
+  accounts: z.record(z.string(), z.record(z.string(), AccountProfileSchema)).default({})
+});
+var DeveloperProfileSchema = z.object({
+  name: z.string().default("Developer"),
+  title: z.string().optional(),
+  primaryLanguages: z.array(z.string()).default([]),
+  preferredStack: z.array(z.string()).default([]),
+  preferredPackageManager: z.string().default("pnpm"),
+  preferredArchitecture: z.string().default("Clean Architecture"),
+  uiPreferences: z.string().default("Minimal, accessible, responsive"),
+  updatedAt: z.string()
+});
+var ContextScopeSchema = z.enum(["task", "project", "developer", "global"]);
+
+// src/core/global/project-registry.ts
+var ProjectRegistryManager = class {
+  constructor(gfs) {
+    this.gfs = gfs;
+  }
+  gfs;
+  get registryFile() {
+    return this.gfs.resolve("projects", "registry.yml");
+  }
+  async getRegistry() {
+    await this.gfs.initGlobalStructure();
+    const data = await this.gfs.readYaml(this.registryFile);
+    if (!data) {
+      const initial = {
+        version: "1.0",
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        projects: []
+      };
+      await this.gfs.writeYaml(this.registryFile, initial);
+      return initial;
+    }
+    return ProjectRegistrySchema.parse(data);
+  }
+  async saveRegistry(registry) {
+    registry.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await this.gfs.writeYaml(this.registryFile, registry);
+  }
+  async listProjects(category) {
+    const reg = await this.getRegistry();
+    if (!category) return reg.projects;
+    return reg.projects.filter((p) => p.type === category);
+  }
+  async getProject(idOrPath) {
+    const reg = await this.getRegistry();
+    const normalized = path4.resolve(idOrPath);
+    return reg.projects.find(
+      (p) => p.id === idOrPath || path4.resolve(p.path) === normalized
+    );
+  }
+  async registerProject(data) {
+    const reg = await this.getRegistry();
+    const resolvedPath = path4.resolve(data.path);
+    const id = (data.name || path4.basename(resolvedPath)).toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const existingIndex = reg.projects.findIndex(
+      (p) => p.id === id || path4.resolve(p.path) === resolvedPath
+    );
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const item = {
+      id,
+      name: data.name || path4.basename(resolvedPath),
+      type: data.type || "personal",
+      path: resolvedPath,
+      client: data.client,
+      repository: data.repository || {
+        provider: "github",
+        accountProfile: "personal"
+      },
+      stack: data.stack || [],
+      continuityEnabled: true,
+      lastAccessed: now
+    };
+    if (existingIndex !== -1) {
+      reg.projects[existingIndex] = {
+        ...reg.projects[existingIndex],
+        ...item,
+        lastAccessed: now
+      };
+    } else {
+      reg.projects.push(item);
+    }
+    await this.saveRegistry(reg);
+    return item;
+  }
+  async classifyProject(idOrPath, type, clientName) {
+    const reg = await this.getRegistry();
+    const normalized = path4.resolve(idOrPath);
+    const item = reg.projects.find(
+      (p) => p.id === idOrPath || path4.resolve(p.path) === normalized
+    );
+    if (!item) {
+      throw new Error(`Project '${idOrPath}' is not registered. Run 'continuity project register' first.`);
+    }
+    item.type = type;
+    if (clientName) item.client = clientName;
+    item.lastAccessed = (/* @__PURE__ */ new Date()).toISOString();
+    await this.saveRegistry(reg);
+    return item;
+  }
+  async touchProject(idOrPath) {
+    const reg = await this.getRegistry();
+    const normalized = path4.resolve(idOrPath);
+    const item = reg.projects.find(
+      (p) => p.id === idOrPath || path4.resolve(p.path) === normalized
+    );
+    if (item) {
+      item.lastAccessed = (/* @__PURE__ */ new Date()).toISOString();
+      await this.saveRegistry(reg);
+    }
+  }
+  // Security & Client Isolation Boundary
+  validateClientIsolation(activeProject, targetProject) {
+    if (!activeProject || !targetProject) return true;
+    if (activeProject.id === targetProject.id) return true;
+    if (activeProject.type === "client" || targetProject.type === "client") {
+      if (activeProject.client && targetProject.client) {
+        return activeProject.client.toLowerCase() === targetProject.client.toLowerCase();
+      }
+      return false;
+    }
+    return true;
+  }
+};
+
 // src/cli/commands/init.ts
 async function runInit(options = {}) {
-  const fs2 = new FileSystem();
+  const fs4 = new FileSystem();
   const git = new GitClient();
-  if (fs2.isInitialized() && !options.force) {
+  if (fs4.isInitialized() && !options.force) {
     TerminalFormatter.warning("Continuity is already initialized in this repository.");
     console.log("Use --force to re-initialize files.");
     return;
   }
   let projectName = options.name;
   if (!projectName) {
-    const pkgPath = fs2.resolve("package.json");
-    if (fs2.exists(pkgPath)) {
+    const pkgPath = fs4.resolve("package.json");
+    if (fs4.exists(pkgPath)) {
       try {
-        const pkg = JSON.parse(await fs2.readFile(pkgPath));
+        const pkg = JSON.parse(await fs4.readFile(pkgPath));
         projectName = pkg.name;
       } catch {
       }
     }
   }
   if (!projectName) {
-    projectName = path3.basename(process.cwd());
+    projectName = path5.basename(process.cwd());
   }
   const branch = await git.isGitRepository() ? await git.getCurrentBranch() : "main";
   TerminalFormatter.header(`Initializing Continuity for "${projectName}"`);
   const dirs = [
-    fs2.resolveContinuity("tasks", "active"),
-    fs2.resolveContinuity("tasks", "completed"),
-    fs2.resolveContinuity("tasks", "blocked"),
-    fs2.resolveContinuity("sessions", "summaries"),
-    fs2.resolveContinuity("sessions", "raw"),
-    fs2.resolveContinuity("handovers"),
-    fs2.resolveContinuity("decisions"),
-    fs2.resolveContinuity("failures"),
-    fs2.resolveContinuity("snapshots"),
-    fs2.resolveContinuity("cache"),
-    fs2.resolve("skills", "continuity")
+    fs4.resolveContinuity("tasks", "active"),
+    fs4.resolveContinuity("tasks", "completed"),
+    fs4.resolveContinuity("tasks", "blocked"),
+    fs4.resolveContinuity("sessions", "summaries"),
+    fs4.resolveContinuity("sessions", "raw"),
+    fs4.resolveContinuity("handovers"),
+    fs4.resolveContinuity("decisions"),
+    fs4.resolveContinuity("failures"),
+    fs4.resolveContinuity("snapshots"),
+    fs4.resolveContinuity("cache"),
+    fs4.resolve("skills", "continuity")
   ];
   for (const dir of dirs) {
-    await fs2.ensureDir(dir);
+    await fs4.ensureDir(dir);
   }
-  await fs2.writeFile(fs2.resolve("CONTINUITY.md"), DEFAULT_CONTINUITY_MD);
+  await fs4.writeFile(fs4.resolve("CONTINUITY.md"), DEFAULT_CONTINUITY_MD);
   TerminalFormatter.success("Created CONTINUITY.md (root protocol file)");
-  await fs2.writeFile(fs2.resolveContinuity("project.md"), DEFAULT_PROJECT_MD(projectName, options.description, options.stack));
+  await fs4.writeFile(fs4.resolveContinuity("project.md"), DEFAULT_PROJECT_MD(projectName, options.description, options.stack));
   TerminalFormatter.success("Created .continuity/project.md");
-  await fs2.writeFile(fs2.resolveContinuity("state.md"), DEFAULT_STATE_MD(projectName, branch));
+  await fs4.writeFile(fs4.resolveContinuity("state.md"), DEFAULT_STATE_MD(projectName, branch));
   TerminalFormatter.success("Created .continuity/state.md");
-  await fs2.writeFile(fs2.resolveContinuity("architecture.md"), DEFAULT_ARCHITECTURE_MD(projectName));
+  await fs4.writeFile(fs4.resolveContinuity("architecture.md"), DEFAULT_ARCHITECTURE_MD(projectName));
   TerminalFormatter.success("Created .continuity/architecture.md");
-  await fs2.writeFile(fs2.resolveContinuity("roadmap.md"), DEFAULT_ROADMAP_MD);
+  await fs4.writeFile(fs4.resolveContinuity("roadmap.md"), DEFAULT_ROADMAP_MD);
   TerminalFormatter.success("Created .continuity/roadmap.md");
-  await fs2.writeFile(fs2.resolveContinuity("index.md"), DEFAULT_INDEX_MD);
+  await fs4.writeFile(fs4.resolveContinuity("index.md"), DEFAULT_INDEX_MD);
   TerminalFormatter.success("Created .continuity/index.md");
-  await fs2.writeFile(fs2.resolveContinuity("config.yml"), DEFAULT_CONFIG_YML);
+  await fs4.writeFile(fs4.resolveContinuity("config.yml"), DEFAULT_CONFIG_YML);
   TerminalFormatter.success("Created .continuity/config.yml");
-  await fs2.writeFile(fs2.resolve("skills", "continuity", "SKILL.md"), UNIVERSAL_SKILL_MD);
+  await fs4.writeFile(fs4.resolve("skills", "continuity", "SKILL.md"), UNIVERSAL_SKILL_MD);
   TerminalFormatter.success("Created skills/continuity/SKILL.md");
   if (options.withAgents) {
-    await fs2.ensureDir(fs2.resolve(".cursor", "rules"));
-    await fs2.writeFile(fs2.resolve(".cursor", "rules", "continuity.mdc"), CURSOR_RULES_MDC);
-    await fs2.writeFile(fs2.resolve("CLAUDE.md"), CLAUDE_CODE_SNIPPET);
-    await fs2.writeFile(fs2.resolve(".windsurfrules"), WINDSURF_RULES_SNIPPET);
-    await fs2.writeFile(fs2.resolve(".clinerules"), CLINE_RULES_SNIPPET);
+    await fs4.ensureDir(fs4.resolve(".cursor", "rules"));
+    await fs4.writeFile(fs4.resolve(".cursor", "rules", "continuity.mdc"), CURSOR_RULES_MDC);
+    await fs4.writeFile(fs4.resolve("CLAUDE.md"), CLAUDE_CODE_SNIPPET);
+    await fs4.writeFile(fs4.resolve(".windsurfrules"), WINDSURF_RULES_SNIPPET);
+    await fs4.writeFile(fs4.resolve(".clinerules"), CLINE_RULES_SNIPPET);
     TerminalFormatter.success("Created AI agent adapters (Cursor, Claude Code, Windsurf, Cline)");
   }
-  const gitignorePath = fs2.resolve(".gitignore");
-  let gitignoreContent = fs2.exists(gitignorePath) ? await fs2.readFile(gitignorePath) : "";
+  const gitignorePath = fs4.resolve(".gitignore");
+  let gitignoreContent = fs4.exists(gitignorePath) ? await fs4.readFile(gitignorePath) : "";
   const ignoresToAdd = [];
   if (!gitignoreContent.includes(".continuity/cache")) {
     ignoresToAdd.push(".continuity/cache/");
@@ -1045,14 +1398,26 @@ async function runInit(options = {}) {
   }
   if (ignoresToAdd.length > 0) {
     const updatedGitignore = (gitignoreContent ? gitignoreContent.trim() + "\n\n" : "") + "# Continuity local cache and raw transcripts\n" + ignoresToAdd.join("\n") + "\n";
-    await fs2.writeFile(gitignorePath, updatedGitignore);
+    await fs4.writeFile(gitignorePath, updatedGitignore);
     TerminalFormatter.success("Updated .gitignore with .continuity/cache/ and .continuity/sessions/raw/");
   }
-  const indexer = new SQLiteIndexer(fs2);
+  const indexer = new SQLiteIndexer(fs4);
   await indexer.init();
   const indexed = await indexer.reindexAll();
   indexer.close();
   TerminalFormatter.success(`Indexed ${indexed} initial documents into SQLite cache`);
+  try {
+    const gfs = new GlobalFileSystem();
+    const regMgr = new ProjectRegistryManager(gfs);
+    await regMgr.registerProject({
+      path: process.cwd(),
+      name: projectName,
+      type: options.type || "personal",
+      stack: options.stack || []
+    });
+    TerminalFormatter.success(`Registered in global project registry (~/.continuity) as "${(options.type || "personal").toUpperCase()}"`);
+  } catch {
+  }
   TerminalFormatter.box("Continuity Initialized Successfully", [
     "Your repository is now equipped with Continuity.",
     "Any AI agent can now resume work with:",
@@ -1065,68 +1430,68 @@ async function runInit(options = {}) {
 }
 
 // src/core/types/state.ts
-import { z as z2 } from "zod";
+import { z as z3 } from "zod";
 
 // src/core/types/handover.ts
-import { z } from "zod";
-var NextActionSchema = z.object({
-  file: z.string().optional(),
-  focus: z.string().optional(),
-  problem: z.string(),
-  expectedSolution: z.string(),
-  constraints: z.array(z.string()).default([])
+import { z as z2 } from "zod";
+var NextActionSchema = z2.object({
+  file: z2.string().optional(),
+  focus: z2.string().optional(),
+  problem: z2.string(),
+  expectedSolution: z2.string(),
+  constraints: z2.array(z2.string()).default([])
 });
-var HandoverSchema = z.object({
-  id: z.string(),
-  date: z.string(),
-  project: z.string(),
-  branch: z.string(),
-  commit: z.string().optional(),
-  currentTask: z.string().optional(),
-  progress: z.number().min(0).max(100).default(0),
-  completed: z.array(z.string()).default([]),
-  remaining: z.array(z.string()).default([]),
-  modifiedFiles: z.array(z.string()).default([]),
-  uncommittedChanges: z.boolean().default(false),
-  planId: z.string().optional(),
-  planStep: z.string().optional(),
-  commits: z.array(z.string()).default([]),
-  decisions: z.array(z.string()).default([]),
-  problems: z.array(z.string()).default([]),
-  failedApproaches: z.array(z.string()).default([]),
-  nextAction: NextActionSchema,
-  author: z.string().default("ai")
-});
-
-// src/core/types/state.ts
-var ProjectInfoSchema = z2.object({
-  name: z2.string(),
-  purpose: z2.string().default(""),
-  stack: z2.array(z2.string()).default([]),
-  architecture: z2.string().default(""),
-  database: z2.string().optional(),
-  infrastructure: z2.array(z2.string()).default([]),
-  repository: z2.string().optional()
-});
-var ContinuityStateSchema = z2.object({
+var HandoverSchema = z2.object({
+  id: z2.string(),
+  date: z2.string(),
   project: z2.string(),
-  currentBranch: z2.string().default("main"),
-  currentTask: z2.string().default("No active task"),
-  status: z2.string().default("Ready"),
+  branch: z2.string(),
+  commit: z2.string().optional(),
+  currentTask: z2.string().optional(),
   progress: z2.number().min(0).max(100).default(0),
   completed: z2.array(z2.string()).default([]),
   remaining: z2.array(z2.string()).default([]),
-  currentFiles: z2.array(z2.string()).default([]),
-  currentBlocker: z2.string().nullable().default(null),
-  lastAction: z2.string().default("Project initialized"),
-  nextAction: NextActionSchema.or(z2.string()).default({
+  modifiedFiles: z2.array(z2.string()).default([]),
+  uncommittedChanges: z2.boolean().default(false),
+  planId: z2.string().optional(),
+  planStep: z2.string().optional(),
+  commits: z2.array(z2.string()).default([]),
+  decisions: z2.array(z2.string()).default([]),
+  problems: z2.array(z2.string()).default([]),
+  failedApproaches: z2.array(z2.string()).default([]),
+  nextAction: NextActionSchema,
+  author: z2.string().default("ai")
+});
+
+// src/core/types/state.ts
+var ProjectInfoSchema = z3.object({
+  name: z3.string(),
+  purpose: z3.string().default(""),
+  stack: z3.array(z3.string()).default([]),
+  architecture: z3.string().default(""),
+  database: z3.string().optional(),
+  infrastructure: z3.array(z3.string()).default([]),
+  repository: z3.string().optional()
+});
+var ContinuityStateSchema = z3.object({
+  project: z3.string(),
+  currentBranch: z3.string().default("main"),
+  currentTask: z3.string().default("No active task"),
+  status: z3.string().default("Ready"),
+  progress: z3.number().min(0).max(100).default(0),
+  completed: z3.array(z3.string()).default([]),
+  remaining: z3.array(z3.string()).default([]),
+  currentFiles: z3.array(z3.string()).default([]),
+  currentBlocker: z3.string().nullable().default(null),
+  lastAction: z3.string().default("Project initialized"),
+  nextAction: NextActionSchema.or(z3.string()).default({
     problem: "No blocker",
     expectedSolution: "Continue with next task",
     constraints: []
   }),
-  lastSession: z2.string().optional(),
-  lastCommit: z2.string().optional(),
-  updatedAt: z2.string()
+  lastSession: z3.string().optional(),
+  lastCommit: z3.string().optional(),
+  updatedAt: z3.string()
 });
 
 // src/core/storage/markdown.ts
@@ -1204,8 +1569,8 @@ var MarkdownHelper = class {
 
 // src/core/engine/state-manager.ts
 var StateManager = class {
-  constructor(fs2) {
-    this.fs = fs2;
+  constructor(fs4) {
+    this.fs = fs4;
   }
   fs;
   async getState() {
@@ -1444,14 +1809,14 @@ ${state.lastCommit || "None"}
 
 // src/cli/commands/status.ts
 async function runStatus(options = {}) {
-  const fs2 = new FileSystem();
-  if (!fs2.isInitialized()) {
+  const fs4 = new FileSystem();
+  if (!fs4.isInitialized()) {
     TerminalFormatter.error("Continuity is not initialized in this project. Run 'continuity init' first.");
     process.exitCode = 1;
     return;
   }
   const git = new GitClient();
-  const stateManager = new StateManager(fs2);
+  const stateManager = new StateManager(fs4);
   const state = await stateManager.getState();
   const gitStatus = await git.getStatus();
   const projectInfo = await stateManager.getProjectInfo();
@@ -1513,7 +1878,7 @@ async function runStatus(options = {}) {
 }
 
 // src/core/engine/handover-manager.ts
-import path4 from "path";
+import path6 from "path";
 
 // src/core/security/redactor.ts
 var SecretRedactor = class {
@@ -1617,8 +1982,8 @@ var SecretRedactor = class {
 
 // src/core/engine/handover-manager.ts
 var HandoverManager = class {
-  constructor(fs2, git, stateManager, decisionManager, failureManager) {
-    this.fs = fs2;
+  constructor(fs4, git, stateManager, decisionManager, failureManager) {
+    this.fs = fs4;
     this.git = git;
     this.stateManager = stateManager;
     this.decisionManager = decisionManager;
@@ -1645,7 +2010,7 @@ var HandoverManager = class {
     const gitStatus = await this.git.getStatus();
     const taskSlug = (data.currentTask || currentState.currentTask).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").substring(0, 30);
     const id = `handover_${year}${month}${day}_${timeStr}_${taskSlug}`;
-    const targetDir = path4.join(this.handoversDir, year, month);
+    const targetDir = path6.join(this.handoversDir, year, month);
     await this.fs.ensureDir(targetDir);
     const modifiedFiles = Array.from(
       /* @__PURE__ */ new Set([
@@ -1695,7 +2060,7 @@ var HandoverManager = class {
     };
     const validated = HandoverSchema.parse(handover);
     const markdown = this.formatHandoverMarkdown(validated);
-    const filePath = path4.join(targetDir, `${id}.md`);
+    const filePath = path6.join(targetDir, `${id}.md`);
     await this.fs.writeFile(filePath, markdown);
     await this.stateManager.saveState({
       currentBranch: validated.branch,
@@ -1716,9 +2081,9 @@ var HandoverManager = class {
     if (!this.fs.exists(this.handoversDir)) return void 0;
     const files = await this.fs.listFiles(this.handoversDir, ".md");
     if (files.length === 0) return void 0;
-    files.sort((a, b) => path4.basename(b).localeCompare(path4.basename(a)));
+    files.sort((a, b) => path6.basename(b).localeCompare(path6.basename(a)));
     const raw = await this.fs.readFile(files[0]);
-    return this.parseHandoverMarkdown(raw, path4.basename(files[0], ".md"));
+    return this.parseHandoverMarkdown(raw, path6.basename(files[0], ".md"));
   }
   formatHandoverMarkdown(h) {
     const frontmatter = {
@@ -1821,35 +2186,35 @@ ${nextActionLines.join("\n\n")}
 };
 
 // src/core/engine/session-manager.ts
-import path5 from "path";
+import path7 from "path";
 
 // src/core/types/session.ts
-import { z as z3 } from "zod";
-var SessionSummarySchema = z3.object({
-  id: z3.string(),
-  date: z3.string(),
-  agent: z3.string().default("ai"),
-  branch: z3.string().default("main"),
-  task: z3.string().optional(),
-  objective: z3.string(),
-  workCompleted: z3.array(z3.string()).default([]),
-  filesChanged: z3.array(z3.string()).default([]),
-  decisions: z3.array(z3.string()).default([]),
-  failedApproaches: z3.array(z3.string()).default([]),
-  problems: z3.array(z3.string()).default([]),
-  planId: z3.string().optional(),
-  commitsCreated: z3.array(z3.string()).default([]),
-  stagedChanges: z3.array(z3.string()).default([]),
-  unstagedChanges: z3.array(z3.string()).default([]),
-  nextStep: z3.string().optional(),
-  importantContext: z3.string().optional(),
-  gitCommit: z3.string().optional()
+import { z as z4 } from "zod";
+var SessionSummarySchema = z4.object({
+  id: z4.string(),
+  date: z4.string(),
+  agent: z4.string().default("ai"),
+  branch: z4.string().default("main"),
+  task: z4.string().optional(),
+  objective: z4.string(),
+  workCompleted: z4.array(z4.string()).default([]),
+  filesChanged: z4.array(z4.string()).default([]),
+  decisions: z4.array(z4.string()).default([]),
+  failedApproaches: z4.array(z4.string()).default([]),
+  problems: z4.array(z4.string()).default([]),
+  planId: z4.string().optional(),
+  commitsCreated: z4.array(z4.string()).default([]),
+  stagedChanges: z4.array(z4.string()).default([]),
+  unstagedChanges: z4.array(z4.string()).default([]),
+  nextStep: z4.string().optional(),
+  importantContext: z4.string().optional(),
+  gitCommit: z4.string().optional()
 });
 
 // src/core/engine/session-manager.ts
 var SessionManager = class {
-  constructor(fs2, stateManager) {
-    this.fs = fs2;
+  constructor(fs4, stateManager) {
+    this.fs = fs4;
     this.stateManager = stateManager;
     this.redactor = new SecretRedactor();
   }
@@ -1876,8 +2241,8 @@ var SessionManager = class {
   async saveSession(data, rawContent) {
     const dateInfo = this.getDateParts();
     const id = `sess_${dateInfo.dateStr.replace(/-/g, "")}_${dateInfo.timeStr}`;
-    const summaryDir = path5.join(this.sessionsDir, "summaries", dateInfo.year, dateInfo.month, dateInfo.day);
-    const rawDir = path5.join(this.sessionsDir, "raw", dateInfo.year, dateInfo.month, dateInfo.day);
+    const summaryDir = path7.join(this.sessionsDir, "summaries", dateInfo.year, dateInfo.month, dateInfo.day);
+    const rawDir = path7.join(this.sessionsDir, "raw", dateInfo.year, dateInfo.month, dateInfo.day);
     await this.fs.ensureDir(summaryDir);
     const sanitizedObjective = this.redactor.redact(data.objective).text;
     const sanitizedCompleted = (data.workCompleted || []).map((w) => this.redactor.redact(w).text);
@@ -1907,12 +2272,12 @@ var SessionManager = class {
     };
     const validated = SessionSummarySchema.parse(summary);
     const markdown = this.formatSessionMarkdown(validated);
-    const summaryFilePath = path5.join(summaryDir, `${id}.md`);
+    const summaryFilePath = path7.join(summaryDir, `${id}.md`);
     await this.fs.writeFile(summaryFilePath, markdown);
     if (rawContent) {
       await this.fs.ensureDir(rawDir);
       const sanitizedRaw = this.redactor.redact(rawContent).text;
-      const rawFilePath = path5.join(rawDir, `${id}-raw.md`);
+      const rawFilePath = path7.join(rawDir, `${id}-raw.md`);
       await this.fs.writeFile(rawFilePath, sanitizedRaw);
     }
     await this.stateManager.saveState({
@@ -1923,13 +2288,13 @@ var SessionManager = class {
     return validated;
   }
   async listSessions() {
-    const summariesRoot = path5.join(this.sessionsDir, "summaries");
+    const summariesRoot = path7.join(this.sessionsDir, "summaries");
     if (!this.fs.exists(summariesRoot)) return [];
     const files = await this.fs.listFiles(summariesRoot, ".md");
     const sessions = [];
     for (const file of files) {
       const raw = await this.fs.readFile(file);
-      const sess = this.parseSessionMarkdown(raw, path5.basename(file, ".md"));
+      const sess = this.parseSessionMarkdown(raw, path7.basename(file, ".md"));
       if (sess) sessions.push(sess);
     }
     return sessions.sort((a, b) => b.id.localeCompare(a.id));
@@ -2008,27 +2373,27 @@ Commit: ${s.gitCommit || "None"}
 };
 
 // src/core/engine/failure-manager.ts
-import path6 from "path";
+import path8 from "path";
 
 // src/core/types/failure.ts
-import { z as z4 } from "zod";
-var FailureSchema = z4.object({
-  id: z4.string(),
-  title: z4.string(),
-  date: z4.string(),
-  attempt: z4.string(),
-  result: z4.string(),
-  why: z4.string(),
-  doNotRepeat: z4.string(),
-  betterApproach: z4.string(),
-  relatedTask: z4.string().optional(),
-  relatedFiles: z4.array(z4.string()).default([])
+import { z as z5 } from "zod";
+var FailureSchema = z5.object({
+  id: z5.string(),
+  title: z5.string(),
+  date: z5.string(),
+  attempt: z5.string(),
+  result: z5.string(),
+  why: z5.string(),
+  doNotRepeat: z5.string(),
+  betterApproach: z5.string(),
+  relatedTask: z5.string().optional(),
+  relatedFiles: z5.array(z5.string()).default([])
 });
 
 // src/core/engine/failure-manager.ts
 var FailureManager = class {
-  constructor(fs2) {
-    this.fs = fs2;
+  constructor(fs4) {
+    this.fs = fs4;
   }
   fs;
   get failuresDir() {
@@ -2043,7 +2408,7 @@ var FailureManager = class {
     const slug = this.slugify(data.title);
     const id = `${date}-${slug}`;
     const filename = `${id}.md`;
-    const filePath = path6.join(this.failuresDir, filename);
+    const filePath = path8.join(this.failuresDir, filename);
     const failure = {
       id,
       title: data.title,
@@ -2067,7 +2432,7 @@ var FailureManager = class {
     const failures = [];
     for (const file of files) {
       const raw = await this.fs.readFile(file);
-      const failure = this.parseFailureMarkdown(raw, path6.basename(file, ".md"));
+      const failure = this.parseFailureMarkdown(raw, path8.basename(file, ".md"));
       if (failure) failures.push(failure);
     }
     return failures.sort((a, b) => b.date.localeCompare(a.date));
@@ -2125,28 +2490,28 @@ ${MarkdownHelper.formatBulletList(f.relatedFiles)}
 };
 
 // src/core/engine/decision-manager.ts
-import path7 from "path";
+import path9 from "path";
 
 // src/core/types/decision.ts
-import { z as z5 } from "zod";
-var DecisionSchema = z5.object({
-  id: z5.string(),
+import { z as z6 } from "zod";
+var DecisionSchema = z6.object({
+  id: z6.string(),
   // e.g. "ADR-001" or "2026-09-03-rabbitmq"
-  title: z5.string(),
-  status: z5.enum(["proposed", "accepted", "superseded", "deprecated"]).default("accepted"),
-  date: z5.string(),
-  decision: z5.string(),
-  why: z5.string(),
-  alternatives: z5.array(z5.string()).default([]),
-  rejectedBecause: z5.string().optional(),
-  implications: z5.array(z5.string()).default([]),
-  author: z5.string().optional()
+  title: z6.string(),
+  status: z6.enum(["proposed", "accepted", "superseded", "deprecated"]).default("accepted"),
+  date: z6.string(),
+  decision: z6.string(),
+  why: z6.string(),
+  alternatives: z6.array(z6.string()).default([]),
+  rejectedBecause: z6.string().optional(),
+  implications: z6.array(z6.string()).default([]),
+  author: z6.string().optional()
 });
 
 // src/core/engine/decision-manager.ts
 var DecisionManager = class {
-  constructor(fs2) {
-    this.fs = fs2;
+  constructor(fs4) {
+    this.fs = fs4;
   }
   fs;
   get decisionsDir() {
@@ -2160,7 +2525,7 @@ var DecisionManager = class {
     const files = await this.fs.listFiles(this.decisionsDir, ".md");
     let maxId = 0;
     for (const file of files) {
-      const filename = path7.basename(file);
+      const filename = path9.basename(file);
       const match = filename.match(/ADR-(\d+)/i);
       if (match) {
         const num = parseInt(match[1], 10);
@@ -2176,7 +2541,7 @@ var DecisionManager = class {
     const date = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
     const slug = this.slugify(data.title);
     const filename = `${id}-${slug}.md`;
-    const filePath = path7.join(this.decisionsDir, filename);
+    const filePath = path9.join(this.decisionsDir, filename);
     const decision = {
       id,
       title: data.title,
@@ -2200,7 +2565,7 @@ var DecisionManager = class {
     const decisions = [];
     for (const file of files) {
       const raw = await this.fs.readFile(file);
-      const decision = this.parseDecisionMarkdown(raw, path7.basename(file, ".md"));
+      const decision = this.parseDecisionMarkdown(raw, path9.basename(file, ".md"));
       if (decision) decisions.push(decision);
     }
     return decisions.sort((a, b) => a.id.localeCompare(b.id));
@@ -2262,45 +2627,45 @@ ${d.date}
 };
 
 // src/core/engine/plan-manager.ts
-import path8 from "path";
+import path10 from "path";
 
 // src/core/types/plan.ts
-import { z as z6 } from "zod";
-var PlanStatusSchema = z6.enum(["planned", "active", "blocked", "completed", "abandoned"]);
-var PlanStepSchema = z6.object({
-  id: z6.string(),
-  description: z6.string(),
-  status: z6.enum(["pending", "in_progress", "completed", "blocked"]).default("pending"),
-  commits: z6.array(z6.string()).default([]),
-  files: z6.array(z6.string()).default([])
+import { z as z7 } from "zod";
+var PlanStatusSchema = z7.enum(["planned", "active", "blocked", "completed", "abandoned"]);
+var PlanStepSchema = z7.object({
+  id: z7.string(),
+  description: z7.string(),
+  status: z7.enum(["pending", "in_progress", "completed", "blocked"]).default("pending"),
+  commits: z7.array(z7.string()).default([]),
+  files: z7.array(z7.string()).default([])
 });
-var AcceptanceCriterionSchema = z6.object({
-  id: z6.string(),
-  description: z6.string(),
-  satisfied: z6.boolean().default(false)
+var AcceptanceCriterionSchema = z7.object({
+  id: z7.string(),
+  description: z7.string(),
+  satisfied: z7.boolean().default(false)
 });
-var PlanSchema = z6.object({
-  id: z6.string(),
-  title: z6.string(),
+var PlanSchema = z7.object({
+  id: z7.string(),
+  title: z7.string(),
   status: PlanStatusSchema.default("active"),
-  goal: z6.string(),
-  scope: z6.array(z6.string()).default([]),
-  steps: z6.array(PlanStepSchema).default([]),
-  constraints: z6.array(z6.string()).default([]),
-  dependencies: z6.array(z6.string()).default([]),
-  acceptanceCriteria: z6.array(AcceptanceCriterionSchema).default([]),
-  currentStep: z6.string().optional(),
-  nextStep: z6.string().optional(),
-  createdAt: z6.string(),
-  updatedAt: z6.string(),
-  completedAt: z6.string().optional(),
-  abandonReason: z6.string().optional()
+  goal: z7.string(),
+  scope: z7.array(z7.string()).default([]),
+  steps: z7.array(PlanStepSchema).default([]),
+  constraints: z7.array(z7.string()).default([]),
+  dependencies: z7.array(z7.string()).default([]),
+  acceptanceCriteria: z7.array(AcceptanceCriterionSchema).default([]),
+  currentStep: z7.string().optional(),
+  nextStep: z7.string().optional(),
+  createdAt: z7.string(),
+  updatedAt: z7.string(),
+  completedAt: z7.string().optional(),
+  abandonReason: z7.string().optional()
 });
 
 // src/core/engine/plan-manager.ts
 var PlanManager2 = class {
-  constructor(fs2) {
-    this.fs = fs2;
+  constructor(fs4) {
+    this.fs = fs4;
   }
   fs;
   get plansDir() {
@@ -2310,22 +2675,26 @@ var PlanManager2 = class {
     return title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").substring(0, 50);
   }
   getPlanDir(status) {
-    return path8.join(this.plansDir, status);
+    return path10.join(this.plansDir, status);
   }
   async createPlan(data) {
-    await this.fs.ensureDir(path8.join(this.plansDir, "active"));
-    await this.fs.ensureDir(path8.join(this.plansDir, "blocked"));
-    await this.fs.ensureDir(path8.join(this.plansDir, "completed"));
-    await this.fs.ensureDir(path8.join(this.plansDir, "abandoned"));
+    await this.fs.ensureDir(path10.join(this.plansDir, "active"));
+    await this.fs.ensureDir(path10.join(this.plansDir, "blocked"));
+    await this.fs.ensureDir(path10.join(this.plansDir, "completed"));
+    await this.fs.ensureDir(path10.join(this.plansDir, "abandoned"));
     const id = this.slugify(data.title);
     const now = (/* @__PURE__ */ new Date()).toISOString();
-    const steps = data.steps.map((s, index) => ({
-      id: `step-${index + 1}`,
-      description: s.description,
-      status: index === 0 ? "in_progress" : "pending",
-      commits: [],
-      files: s.files || []
-    }));
+    const steps = data.steps.map((s, index) => {
+      const description = typeof s === "string" ? s : s.description;
+      const files = typeof s === "string" ? [] : s.files || [];
+      return {
+        id: `step-${index + 1}`,
+        description,
+        status: index === 0 ? "in_progress" : "pending",
+        commits: [],
+        files
+      };
+    });
     const acceptanceCriteria = (data.acceptanceCriteria || []).map((ac, index) => ({
       id: `crit-${index + 1}`,
       description: ac,
@@ -2353,7 +2722,7 @@ var PlanManager2 = class {
   async getPlan(id) {
     const statuses = ["active", "blocked", "completed", "abandoned", "planned"];
     for (const status of statuses) {
-      const planPath = path8.join(this.getPlanDir(status), `${id}.md`);
+      const planPath = path10.join(this.getPlanDir(status), `${id}.md`);
       if (this.fs.exists(planPath)) {
         const raw = await this.fs.readFile(planPath);
         return this.parsePlanMarkdown(raw, id, status);
@@ -2367,7 +2736,7 @@ var PlanManager2 = class {
     const files = await this.fs.listFiles(activeDir, ".md");
     if (files.length === 0) return void 0;
     const raw = await this.fs.readFile(files[0]);
-    return this.parsePlanMarkdown(raw, path8.basename(files[0], ".md"), "active");
+    return this.parsePlanMarkdown(raw, path10.basename(files[0], ".md"), "active");
   }
   async updatePlan(id, updates) {
     const plan = await this.getPlan(id);
@@ -2406,8 +2775,8 @@ var PlanManager2 = class {
     }
     plan.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
     if (updates.status && updates.status !== previousStatus) {
-      const oldPath = path8.join(this.getPlanDir(previousStatus), `${plan.id}.md`);
-      const newPath = path8.join(this.getPlanDir(updates.status), `${plan.id}.md`);
+      const oldPath = path10.join(this.getPlanDir(previousStatus), `${plan.id}.md`);
+      const newPath = path10.join(this.getPlanDir(updates.status), `${plan.id}.md`);
       await this.fs.ensureDir(this.getPlanDir(updates.status));
       if (this.fs.exists(oldPath)) {
         await this.fs.deleteFile(oldPath);
@@ -2430,8 +2799,8 @@ var PlanManager2 = class {
     for (const crit of plan.acceptanceCriteria) {
       crit.satisfied = true;
     }
-    const oldPath = path8.join(this.getPlanDir("active"), `${plan.id}.md`);
-    const newPath = path8.join(this.getPlanDir("completed"), `${plan.id}.md`);
+    const oldPath = path10.join(this.getPlanDir("active"), `${plan.id}.md`);
+    const newPath = path10.join(this.getPlanDir("completed"), `${plan.id}.md`);
     await this.fs.ensureDir(this.getPlanDir("completed"));
     if (this.fs.exists(oldPath)) {
       await this.fs.deleteFile(oldPath);
@@ -2462,7 +2831,7 @@ var PlanManager2 = class {
       const dir = this.getPlanDir(status);
       const files = await this.fs.listFiles(dir, ".md");
       for (const file of files) {
-        const id = path8.basename(file, ".md");
+        const id = path10.basename(file, ".md");
         const raw = await this.fs.readFile(file);
         const plan = this.parsePlanMarkdown(raw, id, status);
         if (plan) result[status].push(plan);
@@ -2472,7 +2841,7 @@ var PlanManager2 = class {
   }
   savePlanFile(plan) {
     const dir = this.getPlanDir(plan.status);
-    const filePath = path8.join(dir, `${plan.id}.md`);
+    const filePath = path10.join(dir, `${plan.id}.md`);
     const content = this.formatPlanMarkdown(plan);
     return this.fs.writeFile(filePath, content);
   }
@@ -2596,9 +2965,326 @@ ${p.abandonReason}
   }
 };
 
+// src/core/global/device-detector.ts
+import os2 from "os";
+import fs3 from "fs/promises";
+import { execFile as execFile2 } from "child_process";
+import { promisify as promisify2 } from "util";
+var execFileAsync2 = promisify2(execFile2);
+var DeviceDetector = class {
+  constructor(gfs) {
+    this.gfs = gfs;
+  }
+  gfs;
+  async runCommand(cmd, args) {
+    try {
+      const { stdout } = await execFileAsync2(cmd, args);
+      return stdout.trim();
+    } catch {
+      return "";
+    }
+  }
+  async getPrettyOsName() {
+    if (os2.platform() === "linux") {
+      try {
+        const osRelease = await fs3.readFile("/etc/os-release", "utf-8");
+        const match = osRelease.match(/PRETTY_NAME="?([^"\n]+)"?/);
+        if (match && match[1]) return match[1];
+      } catch {
+      }
+      return `Linux (${os2.release()})`;
+    }
+    if (os2.platform() === "darwin") {
+      return `macOS (${os2.release()})`;
+    }
+    if (os2.platform() === "win32") {
+      return `Windows (${os2.release()})`;
+    }
+    return `${os2.platform()} ${os2.release()}`;
+  }
+  async probeEnvironment() {
+    const hostname = os2.hostname();
+    const [
+      osName,
+      nodeV,
+      pnpmV,
+      npmV,
+      yarnV,
+      bunV,
+      pythonV,
+      gitV,
+      dockerV,
+      psqlV,
+      sqliteV
+    ] = await Promise.all([
+      this.getPrettyOsName(),
+      this.runCommand("node", ["-v"]),
+      this.runCommand("pnpm", ["-v"]),
+      this.runCommand("npm", ["-v"]),
+      this.runCommand("yarn", ["-v"]),
+      this.runCommand("bun", ["-v"]),
+      this.runCommand("python3", ["--version"]).then((v) => v || this.runCommand("python", ["--version"])),
+      this.runCommand("git", ["--version"]),
+      this.runCommand("docker", ["--version"]),
+      this.runCommand("psql", ["--version"]),
+      this.runCommand("sqlite3", ["--version"])
+    ]);
+    const runtimes = {};
+    if (nodeV) runtimes.node = nodeV.replace(/^v/, "");
+    if (pnpmV) runtimes.pnpm = pnpmV;
+    if (npmV) runtimes.npm = npmV;
+    if (yarnV) runtimes.yarn = yarnV;
+    if (bunV) runtimes.bun = bunV;
+    if (pythonV) runtimes.python = pythonV.replace(/^Python\s*/i, "");
+    const tools = {};
+    if (gitV) tools.git = gitV.replace(/^git version\s*/i, "");
+    if (dockerV) tools.docker = dockerV.replace(/^Docker version\s*/i, "").split(",")[0];
+    if (psqlV) tools.postgresql = psqlV.replace(/^psql \(PostgreSQL\)\s*/i, "");
+    if (sqliteV) tools.sqlite = sqliteV.split(" ")[0];
+    const shell = process.env.SHELL ? process.env.SHELL.split("/").pop() : void 0;
+    const defaultEditor = process.env.EDITOR || process.env.VISUAL || "VS Code";
+    const packageManager = runtimes.pnpm ? "pnpm" : runtimes.npm ? "npm" : "unknown";
+    return {
+      id: hostname.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+      name: `${hostname} (${osName})`,
+      hostname,
+      os: {
+        name: osName,
+        platform: os2.platform(),
+        release: os2.release(),
+        arch: os2.arch()
+      },
+      runtimes,
+      tools,
+      shell,
+      defaultEditor,
+      packageManager,
+      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+  }
+  async getStoredEnvironment(deviceId) {
+    const id = deviceId || os2.hostname().toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const deviceFile = this.gfs.resolve("devices", `${id}.yml`);
+    return this.gfs.readYaml(deviceFile);
+  }
+  async syncEnvironment(deviceId) {
+    await this.gfs.initGlobalStructure();
+    const live = await this.probeEnvironment();
+    const id = deviceId || live.id;
+    const deviceFile = this.gfs.resolve("devices", `${id}.yml`);
+    await this.gfs.writeYaml(deviceFile, live);
+    return live;
+  }
+  async detectDrift(deviceId) {
+    const stored = await this.getStoredEnvironment(deviceId);
+    const live = await this.probeEnvironment();
+    if (!stored) {
+      return [];
+    }
+    const drifts = [];
+    const allRuntimeKeys = Array.from(/* @__PURE__ */ new Set([...Object.keys(stored.runtimes), ...Object.keys(live.runtimes)]));
+    for (const r of allRuntimeKeys) {
+      const sVal = stored.runtimes[r] || "none";
+      const lVal = live.runtimes[r] || "none";
+      if (sVal !== lVal) {
+        drifts.push({
+          tool: r,
+          storedVersion: sVal,
+          currentVersion: lVal,
+          driftDetected: true
+        });
+      }
+    }
+    const allToolKeys = Array.from(/* @__PURE__ */ new Set([...Object.keys(stored.tools), ...Object.keys(live.tools)]));
+    for (const t of allToolKeys) {
+      const sVal = stored.tools[t] || "none";
+      const lVal = live.tools[t] || "none";
+      if (sVal !== lVal) {
+        drifts.push({
+          tool: t,
+          storedVersion: sVal,
+          currentVersion: lVal,
+          driftDetected: true
+        });
+      }
+    }
+    return drifts;
+  }
+};
+
+// src/core/global/toolchain-manager.ts
+var ToolchainManager = class {
+  constructor(gfs, projectFs, detector) {
+    this.gfs = gfs;
+    this.projectFs = projectFs;
+    this.detector = detector;
+  }
+  gfs;
+  projectFs;
+  detector;
+  async resolveEffectiveToolchain(taskOverride) {
+    const deviceDetector = this.detector || new DeviceDetector(this.gfs);
+    const device = await deviceDetector.getStoredEnvironment() || await deviceDetector.probeEnvironment();
+    let runtimeVersion = device.runtimes.node || process.version.replace(/^v/, "");
+    let runtimeSource = "global";
+    if (this.projectFs) {
+      const pkgPath = this.projectFs.resolve("package.json");
+      if (this.projectFs.exists(pkgPath)) {
+        try {
+          const pkg = JSON.parse(await this.projectFs.readFile(pkgPath));
+          if (pkg.engines && pkg.engines.node) {
+            runtimeVersion = pkg.engines.node;
+            runtimeSource = "project";
+          }
+        } catch {
+        }
+      }
+      const nvmrcPath = this.projectFs.resolve(".nvmrc");
+      if (this.projectFs.exists(nvmrcPath)) {
+        try {
+          const nvmrc = (await this.projectFs.readFile(nvmrcPath)).trim();
+          if (nvmrc) {
+            runtimeVersion = nvmrc.replace(/^v/, "");
+            runtimeSource = "project";
+          }
+        } catch {
+        }
+      }
+    }
+    if (taskOverride?.nodeVersion) {
+      runtimeVersion = taskOverride.nodeVersion;
+      runtimeSource = "task";
+    }
+    let pmName = device.packageManager || "pnpm";
+    let pmVersion = device.runtimes[pmName];
+    let pmSource = "global";
+    if (this.projectFs) {
+      if (this.projectFs.exists(this.projectFs.resolve("pnpm-lock.yaml"))) {
+        pmName = "pnpm";
+        pmVersion = device.runtimes.pnpm;
+        pmSource = "detected";
+      } else if (this.projectFs.exists(this.projectFs.resolve("yarn.lock"))) {
+        pmName = "yarn";
+        pmVersion = device.runtimes.yarn;
+        pmSource = "detected";
+      } else if (this.projectFs.exists(this.projectFs.resolve("bun.lockb")) || this.projectFs.exists(this.projectFs.resolve("bun.lock"))) {
+        pmName = "bun";
+        pmVersion = device.runtimes.bun;
+        pmSource = "detected";
+      } else if (this.projectFs.exists(this.projectFs.resolve("package-lock.json"))) {
+        pmName = "npm";
+        pmVersion = device.runtimes.npm;
+        pmSource = "detected";
+      }
+      const pkgPath = this.projectFs.resolve("package.json");
+      if (this.projectFs.exists(pkgPath)) {
+        try {
+          const pkg = JSON.parse(await this.projectFs.readFile(pkgPath));
+          if (pkg.packageManager) {
+            const [name, version] = pkg.packageManager.split("@");
+            pmName = name;
+            pmVersion = version;
+            pmSource = "project";
+          }
+        } catch {
+        }
+      }
+    }
+    if (taskOverride?.packageManager) {
+      pmName = taskOverride.packageManager;
+      pmSource = "task";
+    }
+    const tools = [];
+    if (device.tools.git) {
+      tools.push({ name: "git", version: device.tools.git, source: "global" });
+    }
+    if (device.tools.docker) {
+      tools.push({ name: "docker", version: device.tools.docker, source: "global" });
+    }
+    if (device.tools.postgresql) {
+      tools.push({ name: "postgresql", version: device.tools.postgresql, source: "global" });
+    }
+    if (device.tools.sqlite) {
+      tools.push({ name: "sqlite", version: device.tools.sqlite, source: "global" });
+    }
+    return {
+      runtime: {
+        name: "node",
+        version: runtimeVersion,
+        source: runtimeSource
+      },
+      packageManager: {
+        name: pmName,
+        version: pmVersion,
+        source: pmSource
+      },
+      tools
+    };
+  }
+};
+
+// src/core/global/account-manager.ts
+var AccountManager = class {
+  constructor(gfs) {
+    this.gfs = gfs;
+  }
+  gfs;
+  get accountsFile() {
+    return this.gfs.resolve("accounts", "profiles.yml");
+  }
+  async getRegistry() {
+    await this.gfs.initGlobalStructure();
+    const data = await this.gfs.readYaml(this.accountsFile);
+    if (!data) {
+      const initial = {
+        version: "1.0",
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        accounts: {}
+      };
+      await this.gfs.writeYaml(this.accountsFile, initial);
+      return initial;
+    }
+    return AccountRegistrySchema.parse(data);
+  }
+  async listAccounts(provider) {
+    const reg = await this.getRegistry();
+    const list = [];
+    for (const provKey of Object.keys(reg.accounts)) {
+      if (provider && provKey !== provider) continue;
+      for (const profileKey of Object.keys(reg.accounts[provKey])) {
+        list.push(reg.accounts[provKey][profileKey]);
+      }
+    }
+    return list;
+  }
+  async getAccount(provider, profile) {
+    const reg = await this.getRegistry();
+    return reg.accounts[provider]?.[profile];
+  }
+  async setAccountProfile(profile) {
+    const reg = await this.getRegistry();
+    if (!reg.accounts[profile.provider]) {
+      reg.accounts[profile.provider] = {};
+    }
+    reg.accounts[profile.provider][profile.profile] = profile;
+    reg.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await this.gfs.writeYaml(this.accountsFile, reg);
+    return profile;
+  }
+  // AI-Safe Sanitization: Never expose credential references or tokens to LLMs
+  getAiSafeMetadata(profile) {
+    return {
+      provider: profile.provider,
+      profile: profile.profile,
+      username: profile.username,
+      status: profile.status
+    };
+  }
+};
+
 // src/core/engine/resume-engine.ts
 var ResumeEngine = class {
-  constructor(stateManager, handoverManager, sessionManager, failureManager, decisionManager, git, planManager) {
+  constructor(stateManager, handoverManager, sessionManager, failureManager, decisionManager, git, planManager, globalFs) {
     this.stateManager = stateManager;
     this.handoverManager = handoverManager;
     this.sessionManager = sessionManager;
@@ -2606,6 +3292,7 @@ var ResumeEngine = class {
     this.decisionManager = decisionManager;
     this.git = git;
     this.planManager = planManager;
+    this.globalFs = globalFs;
   }
   stateManager;
   handoverManager;
@@ -2614,7 +3301,9 @@ var ResumeEngine = class {
   decisionManager;
   git;
   planManager;
-  async buildContext() {
+  globalFs;
+  async buildContext(options = {}) {
+    const scope = options.scope || "project";
     const projectInfo = await this.stateManager.getProjectInfo();
     const state = await this.stateManager.getState();
     const gitStatus = await this.git.getStatus();
@@ -2623,6 +3312,43 @@ var ResumeEngine = class {
     const failures = await this.failureManager.listFailures();
     const decisions = await this.decisionManager.listDecisions();
     const activePlan = this.planManager ? await this.planManager.getActivePlan() : void 0;
+    let developerInfo;
+    let environmentInfo;
+    let category;
+    let accountMetadata;
+    if (this.globalFs && scope !== "task") {
+      try {
+        const projectFs = this.stateManager.fs;
+        const toolchainMgr = new ToolchainManager(this.globalFs, projectFs);
+        const effective = await toolchainMgr.resolveEffectiveToolchain();
+        environmentInfo = {
+          os: process.platform,
+          runtime: `${effective.runtime.name} ${effective.runtime.version} (${effective.runtime.source})`,
+          packageManager: `${effective.packageManager.name} (${effective.packageManager.source})`
+        };
+        const regMgr = new ProjectRegistryManager(this.globalFs);
+        const regProject = await regMgr.getProject(projectFs.rootDir || process.cwd());
+        if (regProject) {
+          category = regProject.type;
+        }
+        const acctMgr = new AccountManager(this.globalFs);
+        const accounts = await acctMgr.listAccounts("github");
+        if (accounts.length > 0) {
+          accountMetadata = acctMgr.getAiSafeMetadata(accounts[0]);
+        }
+        if (scope === "developer" || scope === "global") {
+          const devProfilePath = this.globalFs.resolve("profile", "developer.md");
+          if (this.globalFs.exists(devProfilePath)) {
+            const rawDev = await this.globalFs.readFile(devProfilePath);
+            const nameMatch = rawDev.match(/Name:\s*([^\n]+)/i);
+            developerInfo = {
+              name: nameMatch ? nameMatch[1].trim() : "Developer"
+            };
+          }
+        }
+      } catch {
+      }
+    }
     let nextAction = latestHandover?.nextAction || (typeof state.nextAction === "object" ? state.nextAction : {
       problem: state.nextAction || "Continue work",
       expectedSolution: "Proceed to next task milestone",
@@ -2663,9 +3389,14 @@ var ResumeEngine = class {
       };
     }
     return {
+      scope,
       project: projectInfo.name || state.project,
+      category,
       purpose: projectInfo.purpose || "",
       architectureSummary: projectInfo.architecture || (projectInfo.stack.length > 0 ? projectInfo.stack.join(", ") : "Standard"),
+      developer: developerInfo,
+      environment: environmentInfo,
+      accountMetadata,
       branch: gitStatus.branch || state.currentBranch,
       commit: gitStatus.commit?.shortHash || state.lastCommit,
       currentTask: state.currentTask,
@@ -2687,11 +3418,16 @@ var ResumeEngine = class {
   formatCompact(ctx) {
     const lines = [
       "================ CONTINUITY RESUME ================\n",
-      `Project: ${ctx.project}`,
+      `Project: ${ctx.project}${ctx.category ? ` [Category: ${ctx.category.toUpperCase()}]` : ""}`
+    ];
+    if (ctx.environment) {
+      lines.push(`Environment: ${ctx.environment.runtime} | ${ctx.environment.packageManager}`);
+    }
+    lines.push(
       `Branch: ${ctx.branch}${ctx.commit ? ` (${ctx.commit})` : ""}`,
       `Current Task: ${ctx.currentTask} [${ctx.progress}% completed]`,
       `Status: ${ctx.currentBlocker ? `BLOCKED - ${ctx.currentBlocker}` : "In Progress"}`
-    ];
+    );
     if (ctx.plan) {
       lines.push(
         `Active Plan: ${ctx.plan.title} [${ctx.plan.progressPercentage}% completed]`,
@@ -2733,14 +3469,26 @@ ${ctx.nextAction.constraints.map((c) => `  * ${c}`).join("\n")}` : "",
   formatFullMarkdown(ctx) {
     const lines = [
       "# Continuity Resume Context",
-      "\n## 1. Project Identity",
+      "\n## 1. Project & Environment",
       `- **Name**: ${ctx.project}`,
+      `- **Category**: ${ctx.category ? ctx.category.toUpperCase() : "Default"}`,
       `- **Purpose**: ${ctx.purpose || "Not specified"}`,
-      `- **Architecture**: ${ctx.architectureSummary}`,
+      `- **Architecture**: ${ctx.architectureSummary}`
+    ];
+    if (ctx.environment) {
+      lines.push(
+        `- **Runtime**: \`${ctx.environment.runtime}\``,
+        `- **Package Manager**: \`${ctx.environment.packageManager}\``
+      );
+    }
+    if (ctx.accountMetadata) {
+      lines.push(`- **Repository Account**: ${ctx.accountMetadata.username} (${ctx.accountMetadata.profile})`);
+    }
+    lines.push(
       `- **Branch**: \`${ctx.branch}\``,
       `- **Commit**: \`${ctx.commit || "unknown"}\``,
       `- **Uncommitted Changes**: ${ctx.hasUncommittedChanges ? "Yes" : "No"}`
-    ];
+    );
     if (ctx.plan) {
       lines.push(
         "\n## 2. Active Plan",
@@ -2794,19 +3542,20 @@ ${MarkdownHelper.formatBulletList(ctx.nextAction.constraints, "  *")}` : ""
 
 // src/cli/commands/resume.ts
 async function runResume(options = {}) {
-  const fs2 = new FileSystem();
-  if (!fs2.isInitialized()) {
+  const fs4 = new FileSystem();
+  if (!fs4.isInitialized()) {
     TerminalFormatter.error("Continuity is not initialized in this project. Run 'continuity init' first.");
     process.exitCode = 1;
     return;
   }
   const git = new GitClient();
-  const stateManager = new StateManager(fs2);
-  const decisionManager = new DecisionManager(fs2);
-  const failureManager = new FailureManager(fs2);
-  const handoverManager = new HandoverManager(fs2, git, stateManager, decisionManager, failureManager);
-  const sessionManager = new SessionManager(fs2, stateManager);
-  const planManager = new PlanManager2(fs2);
+  const stateManager = new StateManager(fs4);
+  const decisionManager = new DecisionManager(fs4);
+  const failureManager = new FailureManager(fs4);
+  const handoverManager = new HandoverManager(fs4, git, stateManager, decisionManager, failureManager);
+  const sessionManager = new SessionManager(fs4, stateManager);
+  const planManager = new PlanManager2(fs4);
+  const gfs = new GlobalFileSystem();
   const resumeEngine = new ResumeEngine(
     stateManager,
     handoverManager,
@@ -2814,9 +3563,12 @@ async function runResume(options = {}) {
     failureManager,
     decisionManager,
     git,
-    planManager
+    planManager,
+    gfs
   );
-  const context = await resumeEngine.buildContext();
+  const context = await resumeEngine.buildContext({
+    scope: options.scope || "project"
+  });
   if (options.json) {
     console.log(JSON.stringify(context, null, 2));
     return;
@@ -2830,18 +3582,18 @@ async function runResume(options = {}) {
 
 // src/cli/commands/handover.ts
 async function runHandover(options = {}) {
-  const fs2 = new FileSystem();
-  if (!fs2.isInitialized()) {
+  const fs4 = new FileSystem();
+  if (!fs4.isInitialized()) {
     TerminalFormatter.error("Continuity is not initialized in this project. Run 'continuity init' first.");
     process.exitCode = 1;
     return;
   }
   const git = new GitClient();
-  const stateManager = new StateManager(fs2);
-  const decisionManager = new DecisionManager(fs2);
-  const failureManager = new FailureManager(fs2);
-  const planManager = new PlanManager(fs2);
-  const handoverManager = new HandoverManager(fs2, git, stateManager, decisionManager, failureManager);
+  const stateManager = new StateManager(fs4);
+  const decisionManager = new DecisionManager(fs4);
+  const failureManager = new FailureManager(fs4);
+  const planManager = new PlanManager(fs4);
+  const handoverManager = new HandoverManager(fs4, git, stateManager, decisionManager, failureManager);
   const currentState = await stateManager.getState();
   const activePlan = await planManager.getActivePlan();
   const progress = options.progress !== void 0 ? parseInt(options.progress, 10) : activePlan ? Math.round(activePlan.steps.filter((s) => s.status === "completed").length / Math.max(1, activePlan.steps.length) * 100) : void 0;
@@ -2880,15 +3632,15 @@ async function runHandover(options = {}) {
 
 // src/cli/commands/session.ts
 async function runSessionSave(options = {}) {
-  const fs2 = new FileSystem();
-  if (!fs2.isInitialized()) {
+  const fs4 = new FileSystem();
+  if (!fs4.isInitialized()) {
     TerminalFormatter.error("Continuity is not initialized. Run 'continuity init' first.");
     process.exitCode = 1;
     return;
   }
   const git = new GitClient();
-  const stateManager = new StateManager(fs2);
-  const sessionManager = new SessionManager(fs2, stateManager);
+  const stateManager = new StateManager(fs4);
+  const sessionManager = new SessionManager(fs4, stateManager);
   const gitStatus = await git.getStatus();
   const currentState = await stateManager.getState();
   const objective = options.objective || `Work on ${currentState.currentTask}`;
@@ -2898,8 +3650,8 @@ async function runSessionSave(options = {}) {
   const failedApproaches = options.failed ? options.failed.split(",").map((s) => s.trim()) : [];
   const problems = options.problems ? options.problems.split(",").map((s) => s.trim()) : [];
   let rawContent;
-  if (options.rawFile && fs2.exists(options.rawFile)) {
-    rawContent = await fs2.readFile(options.rawFile);
+  if (options.rawFile && fs4.exists(options.rawFile)) {
+    rawContent = await fs4.readFile(options.rawFile);
   }
   const session = await sessionManager.saveSession(
     {
@@ -2925,14 +3677,14 @@ async function runSessionSave(options = {}) {
   TerminalFormatter.item("Files Changed", session.filesChanged.length);
 }
 async function runSessionList() {
-  const fs2 = new FileSystem();
-  if (!fs2.isInitialized()) {
+  const fs4 = new FileSystem();
+  if (!fs4.isInitialized()) {
     TerminalFormatter.error("Continuity is not initialized. Run 'continuity init' first.");
     process.exitCode = 1;
     return;
   }
-  const stateManager = new StateManager(fs2);
-  const sessionManager = new SessionManager(fs2, stateManager);
+  const stateManager = new StateManager(fs4);
+  const sessionManager = new SessionManager(fs4, stateManager);
   const sessions = await sessionManager.listSessions();
   TerminalFormatter.header(`Recorded Sessions (${sessions.length})`);
   if (sessions.length === 0) {
@@ -2951,13 +3703,13 @@ async function runSessionList() {
 
 // src/cli/commands/context.ts
 async function runContext(query, options = {}) {
-  const fs2 = new FileSystem();
-  if (!fs2.isInitialized()) {
+  const fs4 = new FileSystem();
+  if (!fs4.isInitialized()) {
     TerminalFormatter.error("Continuity is not initialized. Run 'continuity init' first.");
     process.exitCode = 1;
     return;
   }
-  const indexer = new SQLiteIndexer(fs2);
+  const indexer = new SQLiteIndexer(fs4);
   await indexer.init();
   await indexer.reindexAll();
   const results = indexer.search(query, { limit: options.limit || 5, type: options.type });
@@ -2976,10 +3728,10 @@ async function runContext(query, options = {}) {
 }
 
 // src/core/engine/task-manager.ts
-import path9 from "path";
+import path11 from "path";
 var TaskManager = class {
-  constructor(fs2, stateManager) {
-    this.fs = fs2;
+  constructor(fs4, stateManager) {
+    this.fs = fs4;
     this.stateManager = stateManager;
   }
   fs;
@@ -3077,8 +3829,8 @@ var TaskManager = class {
     if (summary) {
       task.completed = Array.from(/* @__PURE__ */ new Set([...task.completed, summary]));
     }
-    const oldPath = path9.join(this.getTaskDir(previousStatus), `${task.id}.md`);
-    const newPath = path9.join(this.getTaskDir("completed"), `${task.id}.md`);
+    const oldPath = path11.join(this.getTaskDir(previousStatus), `${task.id}.md`);
+    const newPath = path11.join(this.getTaskDir("completed"), `${task.id}.md`);
     await this.fs.ensureDir(this.getTaskDir("completed"));
     const content = this.formatTaskMarkdown(task);
     if (this.fs.exists(oldPath) && oldPath !== newPath) {
@@ -3103,8 +3855,8 @@ var TaskManager = class {
     task.status = "blocked";
     task.blockers = Array.from(/* @__PURE__ */ new Set([...task.blockers, reason]));
     task.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    const oldPath = path9.join(this.getTaskDir(previousStatus), `${task.id}.md`);
-    const newPath = path9.join(this.getTaskDir("blocked"), `${task.id}.md`);
+    const oldPath = path11.join(this.getTaskDir(previousStatus), `${task.id}.md`);
+    const newPath = path11.join(this.getTaskDir("blocked"), `${task.id}.md`);
     await this.fs.ensureDir(this.getTaskDir("blocked"));
     const content = this.formatTaskMarkdown(task);
     if (this.fs.exists(oldPath) && oldPath !== newPath) {
@@ -3121,7 +3873,7 @@ var TaskManager = class {
   async getTask(id) {
     const statuses = ["active", "blocked", "completed"];
     for (const status of statuses) {
-      const taskPath = path9.join(this.getTaskDir(status), `${id}.md`);
+      const taskPath = path11.join(this.getTaskDir(status), `${id}.md`);
       if (this.fs.exists(taskPath)) {
         const raw = await this.fs.readFile(taskPath);
         return this.parseTaskMarkdown(raw, id, status);
@@ -3140,7 +3892,7 @@ var TaskManager = class {
       const dir = this.getTaskDir(status);
       const files = await this.fs.listFiles(dir, ".md");
       for (const file of files) {
-        const id = path9.basename(file, ".md");
+        const id = path11.basename(file, ".md");
         const raw = await this.fs.readFile(file);
         const task = this.parseTaskMarkdown(raw, id, status);
         result[status].push(task);
@@ -3150,7 +3902,7 @@ var TaskManager = class {
   }
   saveTaskFile(task) {
     const dir = this.getTaskDir(task.status);
-    const filePath = path9.join(dir, `${task.id}.md`);
+    const filePath = path11.join(dir, `${task.id}.md`);
     const content = this.formatTaskMarkdown(task);
     return this.fs.writeFile(filePath, content);
   }
@@ -3214,14 +3966,14 @@ ${MarkdownHelper.formatBulletList(task.relatedFiles)}
 
 // src/cli/commands/task.ts
 async function runTaskStart(title, options = {}) {
-  const fs2 = new FileSystem();
-  if (!fs2.isInitialized()) {
+  const fs4 = new FileSystem();
+  if (!fs4.isInitialized()) {
     TerminalFormatter.error("Continuity is not initialized. Run 'continuity init' first.");
     process.exitCode = 1;
     return;
   }
-  const stateManager = new StateManager(fs2);
-  const taskManager = new TaskManager(fs2, stateManager);
+  const stateManager = new StateManager(fs4);
+  const taskManager = new TaskManager(fs4, stateManager);
   const remaining = options.remaining ? options.remaining.split(",").map((s) => s.trim()) : [];
   const relatedFiles = options.files ? options.files.split(",").map((s) => s.trim()) : [];
   const task = await taskManager.startTask(title, {
@@ -3234,14 +3986,14 @@ async function runTaskStart(title, options = {}) {
   TerminalFormatter.info("Synced with .continuity/state.md");
 }
 async function runTaskUpdate(id, options = {}) {
-  const fs2 = new FileSystem();
-  if (!fs2.isInitialized()) {
+  const fs4 = new FileSystem();
+  if (!fs4.isInitialized()) {
     TerminalFormatter.error("Continuity is not initialized. Run 'continuity init' first.");
     process.exitCode = 1;
     return;
   }
-  const stateManager = new StateManager(fs2);
-  const taskManager = new TaskManager(fs2, stateManager);
+  const stateManager = new StateManager(fs4);
+  const taskManager = new TaskManager(fs4, stateManager);
   let taskId = id;
   if (!taskId) {
     const state = await stateManager.getState();
@@ -3274,14 +4026,14 @@ async function runTaskUpdate(id, options = {}) {
   TerminalFormatter.item("Remaining Items", updated.remaining.length);
 }
 async function runTaskComplete(id, options = {}) {
-  const fs2 = new FileSystem();
-  if (!fs2.isInitialized()) {
+  const fs4 = new FileSystem();
+  if (!fs4.isInitialized()) {
     TerminalFormatter.error("Continuity is not initialized. Run 'continuity init' first.");
     process.exitCode = 1;
     return;
   }
-  const stateManager = new StateManager(fs2);
-  const taskManager = new TaskManager(fs2, stateManager);
+  const stateManager = new StateManager(fs4);
+  const taskManager = new TaskManager(fs4, stateManager);
   let taskId = id;
   if (!taskId) {
     const tasks = await taskManager.listTasks();
@@ -3299,28 +4051,28 @@ async function runTaskComplete(id, options = {}) {
   TerminalFormatter.info('Run "continuity handover" to prepare continuation package for the next milestone.');
 }
 async function runTaskBlock(id, options) {
-  const fs2 = new FileSystem();
-  if (!fs2.isInitialized()) {
+  const fs4 = new FileSystem();
+  if (!fs4.isInitialized()) {
     TerminalFormatter.error("Continuity is not initialized. Run 'continuity init' first.");
     process.exitCode = 1;
     return;
   }
-  const stateManager = new StateManager(fs2);
-  const taskManager = new TaskManager(fs2, stateManager);
+  const stateManager = new StateManager(fs4);
+  const taskManager = new TaskManager(fs4, stateManager);
   const blocked = await taskManager.blockTask(id, options.reason || "Blocked by external dependency");
   TerminalFormatter.warning(`Task blocked: "${blocked.title}"`);
   TerminalFormatter.info(`Reason: ${options.reason}`);
   TerminalFormatter.info(`Moved to .continuity/tasks/blocked/${blocked.id}.md`);
 }
 async function runTaskList() {
-  const fs2 = new FileSystem();
-  if (!fs2.isInitialized()) {
+  const fs4 = new FileSystem();
+  if (!fs4.isInitialized()) {
     TerminalFormatter.error("Continuity is not initialized. Run 'continuity init' first.");
     process.exitCode = 1;
     return;
   }
-  const stateManager = new StateManager(fs2);
-  const taskManager = new TaskManager(fs2, stateManager);
+  const stateManager = new StateManager(fs4);
+  const taskManager = new TaskManager(fs4, stateManager);
   const tasks = await taskManager.listTasks();
   TerminalFormatter.header("Continuity Tasks");
   console.log(`
@@ -3345,13 +4097,13 @@ COMPLETED (${tasks.completed.length}):`);
 
 // src/cli/commands/plan.ts
 async function runPlanCreate(title, options = {}) {
-  const fs2 = new FileSystem();
-  if (!fs2.isInitialized()) {
+  const fs4 = new FileSystem();
+  if (!fs4.isInitialized()) {
     TerminalFormatter.error("Continuity is not initialized. Run 'continuity init' first.");
     process.exitCode = 1;
     return;
   }
-  const planManager = new PlanManager2(fs2);
+  const planManager = new PlanManager2(fs4);
   const goal = options.goal || `Implement and deliver ${title}`;
   const scope = options.scope ? options.scope.split(",").map((s) => s.trim()) : [];
   const stepItems = options.steps ? options.steps.split(",").map((s) => ({ description: s.trim() })) : [
@@ -3377,13 +4129,13 @@ async function runPlanCreate(title, options = {}) {
   TerminalFormatter.info(`Stored in .continuity/plans/active/${plan.id}.md`);
 }
 async function runPlanList() {
-  const fs2 = new FileSystem();
-  if (!fs2.isInitialized()) {
+  const fs4 = new FileSystem();
+  if (!fs4.isInitialized()) {
     TerminalFormatter.error("Continuity is not initialized. Run 'continuity init' first.");
     process.exitCode = 1;
     return;
   }
-  const planManager = new PlanManager2(fs2);
+  const planManager = new PlanManager2(fs4);
   const plans = await planManager.listPlans();
   TerminalFormatter.header("Continuity Plans");
   console.log(`
@@ -3415,13 +4167,13 @@ ABANDONED (${plans.abandoned.length}):`);
   }
 }
 async function runPlanShow(id) {
-  const fs2 = new FileSystem();
-  if (!fs2.isInitialized()) {
+  const fs4 = new FileSystem();
+  if (!fs4.isInitialized()) {
     TerminalFormatter.error("Continuity is not initialized. Run 'continuity init' first.");
     process.exitCode = 1;
     return;
   }
-  const planManager = new PlanManager2(fs2);
+  const planManager = new PlanManager2(fs4);
   const plan = await planManager.getPlan(id);
   if (!plan) {
     TerminalFormatter.error(`Plan '${id}' not found.`);
@@ -3454,13 +4206,13 @@ async function runPlanShow(id) {
   }
 }
 async function runPlanUpdate(id, options = {}) {
-  const fs2 = new FileSystem();
-  if (!fs2.isInitialized()) {
+  const fs4 = new FileSystem();
+  if (!fs4.isInitialized()) {
     TerminalFormatter.error("Continuity is not initialized. Run 'continuity init' first.");
     process.exitCode = 1;
     return;
   }
-  const planManager = new PlanManager2(fs2);
+  const planManager = new PlanManager2(fs4);
   let completeStepIndex;
   if (options.completeStep !== void 0) {
     completeStepIndex = parseInt(options.completeStep, 10) - 1;
@@ -3589,14 +4341,14 @@ async function runDiffCommand(files) {
 }
 
 // src/core/verify/verification-engine.ts
-import { execFile as execFile2 } from "child_process";
-import { promisify as promisify2 } from "util";
-var execFileAsync2 = promisify2(execFile2);
+import { execFile as execFile3 } from "child_process";
+import { promisify as promisify3 } from "util";
+var execFileAsync3 = promisify3(execFile3);
 var VerificationEngine = class {
-  constructor(planManager, git, fs2) {
+  constructor(planManager, git, fs4) {
     this.planManager = planManager;
     this.git = git;
-    this.fs = fs2;
+    this.fs = fs4;
   }
   planManager;
   git;
@@ -3650,7 +4402,7 @@ var VerificationEngine = class {
           const pkg = JSON.parse(await this.fs.readFile(pkgPath));
           if (pkg.scripts && pkg.scripts.test) {
             try {
-              const { stdout } = await execFileAsync2("npm", ["test"], { cwd: this.fs.rootDir });
+              const { stdout } = await execFileAsync3("npm", ["test"], { cwd: this.fs.rootDir });
               testsPassed = true;
               testOutput = stdout.slice(-300);
             } catch (err) {
@@ -3698,15 +4450,15 @@ var VerificationEngine = class {
 
 // src/cli/commands/verify.ts
 async function runVerify(planId, options = {}) {
-  const fs2 = new FileSystem();
-  if (!fs2.isInitialized()) {
+  const fs4 = new FileSystem();
+  if (!fs4.isInitialized()) {
     TerminalFormatter.error("Continuity is not initialized. Run 'continuity init' first.");
     process.exitCode = 1;
     return;
   }
   const git = new GitClient();
-  const planManager = new PlanManager2(fs2);
-  const verifier = new VerificationEngine(planManager, git, fs2);
+  const planManager = new PlanManager2(fs4);
+  const verifier = new VerificationEngine(planManager, git, fs4);
   TerminalFormatter.header("Continuity Plan & Work Verification");
   const report = await verifier.verify(planId, options.test ?? false);
   for (const check of report.checks) {
@@ -3932,19 +4684,19 @@ Next: ${session.nextStep || "None"}`,
 
 // src/cli/commands/prompt.ts
 async function runPromptCommand(taskName) {
-  const fs2 = new FileSystem();
-  if (!fs2.isInitialized()) {
+  const fs4 = new FileSystem();
+  if (!fs4.isInitialized()) {
     TerminalFormatter.error("Continuity is not initialized. Run 'continuity init' first.");
     process.exitCode = 1;
     return;
   }
   const git = new GitClient();
-  const stateManager = new StateManager(fs2);
-  const taskManager = new TaskManager(fs2, stateManager);
-  const planManager = new PlanManager2(fs2);
-  const decisionManager = new DecisionManager(fs2);
-  const failureManager = new FailureManager(fs2);
-  const sessionManager = new SessionManager(fs2, stateManager);
+  const stateManager = new StateManager(fs4);
+  const taskManager = new TaskManager(fs4, stateManager);
+  const planManager = new PlanManager2(fs4);
+  const decisionManager = new DecisionManager(fs4);
+  const failureManager = new FailureManager(fs4);
+  const sessionManager = new SessionManager(fs4, stateManager);
   const ranker = new ContextRanker();
   const state = await stateManager.getState();
   const gitStatus = await git.getStatus();
@@ -3974,13 +4726,13 @@ async function runPromptCommand(taskName) {
 
 // src/cli/commands/decision.ts
 async function runDecision(title, options = {}) {
-  const fs2 = new FileSystem();
-  if (!fs2.isInitialized()) {
+  const fs4 = new FileSystem();
+  if (!fs4.isInitialized()) {
     TerminalFormatter.error("Continuity is not initialized. Run 'continuity init' first.");
     process.exitCode = 1;
     return;
   }
-  const decisionManager = new DecisionManager(fs2);
+  const decisionManager = new DecisionManager(fs4);
   if (options.list || !title) {
     const decisions = await decisionManager.listDecisions();
     TerminalFormatter.header(`Architecture Decision Records (${decisions.length})`);
@@ -4017,13 +4769,13 @@ async function runLog(message) {
 
 // src/cli/commands/failure.ts
 async function runFailure(title, options = {}) {
-  const fs2 = new FileSystem();
-  if (!fs2.isInitialized()) {
+  const fs4 = new FileSystem();
+  if (!fs4.isInitialized()) {
     TerminalFormatter.error("Continuity is not initialized. Run 'continuity init' first.");
     process.exitCode = 1;
     return;
   }
-  const failureManager = new FailureManager(fs2);
+  const failureManager = new FailureManager(fs4);
   if (options.list || !title) {
     const failures = await failureManager.listFailures();
     TerminalFormatter.header(`Recorded Failures & "Do Not Repeat" Lessons (${failures.length})`);
@@ -4058,16 +4810,16 @@ async function runFailure(title, options = {}) {
 }
 
 // src/cli/commands/checkpoint.ts
-import path10 from "path";
+import path12 from "path";
 async function runCheckpoint(name) {
-  const fs2 = new FileSystem();
-  if (!fs2.isInitialized()) {
+  const fs4 = new FileSystem();
+  if (!fs4.isInitialized()) {
     TerminalFormatter.error("Continuity is not initialized. Run 'continuity init' first.");
     process.exitCode = 1;
     return;
   }
   const git = new GitClient();
-  const stateManager = new StateManager(fs2);
+  const stateManager = new StateManager(fs4);
   const state = await stateManager.getState();
   const gitStatus = await git.getStatus();
   const now = /* @__PURE__ */ new Date();
@@ -4075,42 +4827,42 @@ async function runCheckpoint(name) {
   const timeStr = `${now.getHours().toString().padStart(2, "0")}${now.getMinutes().toString().padStart(2, "0")}`;
   const slug = (name || state.currentTask).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").substring(0, 30);
   const snapshotId = `${dateStr}-${timeStr}-${slug}`;
-  const snapshotsDir = fs2.resolveContinuity("snapshots");
-  await fs2.ensureDir(snapshotsDir);
-  const snapshotPath = path10.join(snapshotsDir, `${snapshotId}.md`);
-  const content = await fs2.readFile(fs2.resolveContinuity("state.md"));
-  await fs2.writeFile(snapshotPath, content);
+  const snapshotsDir = fs4.resolveContinuity("snapshots");
+  await fs4.ensureDir(snapshotsDir);
+  const snapshotPath = path12.join(snapshotsDir, `${snapshotId}.md`);
+  const content = await fs4.readFile(fs4.resolveContinuity("state.md"));
+  await fs4.writeFile(snapshotPath, content);
   TerminalFormatter.success(`Checkpoint snapshot created: ${snapshotId}`);
   TerminalFormatter.item("Snapshot File", `.continuity/snapshots/${snapshotId}.md`);
   TerminalFormatter.item("Branch", gitStatus.branch);
   TerminalFormatter.item("Commit", gitStatus.commit?.shortHash || "uncommitted");
 }
 async function runRestoreContext(snapshotId) {
-  const fs2 = new FileSystem();
-  if (!fs2.isInitialized()) {
+  const fs4 = new FileSystem();
+  if (!fs4.isInitialized()) {
     TerminalFormatter.error("Continuity is not initialized. Run 'continuity init' first.");
     process.exitCode = 1;
     return;
   }
-  const snapshotsDir = fs2.resolveContinuity("snapshots");
-  const files = await fs2.listFiles(snapshotsDir, ".md");
-  const match = files.find((f) => path10.basename(f, ".md").includes(snapshotId));
+  const snapshotsDir = fs4.resolveContinuity("snapshots");
+  const files = await fs4.listFiles(snapshotsDir, ".md");
+  const match = files.find((f) => path12.basename(f, ".md").includes(snapshotId));
   if (!match) {
     TerminalFormatter.error(`Snapshot matching '${snapshotId}' not found in .continuity/snapshots/`);
     process.exitCode = 1;
     return;
   }
-  const content = await fs2.readFile(match);
-  await fs2.writeFile(fs2.resolveContinuity("state.md"), content);
-  TerminalFormatter.success(`Restored state context from snapshot: ${path10.basename(match)}`);
+  const content = await fs4.readFile(match);
+  await fs4.writeFile(fs4.resolveContinuity("state.md"), content);
+  TerminalFormatter.success(`Restored state context from snapshot: ${path12.basename(match)}`);
   TerminalFormatter.info('Run "continuity status" to view the restored work state.');
 }
 
 // src/core/engine/explain-engine.ts
-import path11 from "path";
+import path13 from "path";
 var ExplainEngine = class {
-  constructor(fs2, git, taskManager, decisionManager, failureManager, sessionManager) {
-    this.fs = fs2;
+  constructor(fs4, git, taskManager, decisionManager, failureManager, sessionManager) {
+    this.fs = fs4;
     this.git = git;
     this.taskManager = taskManager;
     this.decisionManager = decisionManager;
@@ -4125,7 +4877,7 @@ var ExplainEngine = class {
   sessionManager;
   async explain(targetPath) {
     const fullPath = this.fs.resolve(targetPath);
-    const relativePath = path11.relative(this.fs.rootDir, fullPath);
+    const relativePath = path13.relative(this.fs.rootDir, fullPath);
     const exists = this.fs.exists(fullPath);
     const commits = await this.git.getFileCommits(relativePath, 20);
     const lastCommit = commits[0];
@@ -4140,7 +4892,7 @@ var ExplainEngine = class {
     const decisions = await this.decisionManager.listDecisions();
     const relatedDecisions = [];
     for (const d of decisions) {
-      if (d.decision.includes(relativePath) || d.why.includes(relativePath) || d.title.toLowerCase().includes(path11.basename(relativePath, path11.extname(relativePath)).toLowerCase())) {
+      if (d.decision.includes(relativePath) || d.why.includes(relativePath) || d.title.toLowerCase().includes(path13.basename(relativePath, path13.extname(relativePath)).toLowerCase())) {
         relatedDecisions.push(`${d.id}: ${d.title}`);
       }
     }
@@ -4198,20 +4950,20 @@ var ExplainEngine = class {
 
 // src/cli/commands/explain.ts
 async function runExplain(filePath, options = {}) {
-  const fs2 = new FileSystem();
-  if (!fs2.isInitialized()) {
+  const fs4 = new FileSystem();
+  if (!fs4.isInitialized()) {
     TerminalFormatter.error("Continuity is not initialized. Run 'continuity init' first.");
     process.exitCode = 1;
     return;
   }
   const git = new GitClient();
-  const stateManager = new StateManager(fs2);
-  const taskManager = new TaskManager(fs2, stateManager);
-  const decisionManager = new DecisionManager(fs2);
-  const failureManager = new FailureManager(fs2);
-  const sessionManager = new SessionManager(fs2, stateManager);
+  const stateManager = new StateManager(fs4);
+  const taskManager = new TaskManager(fs4, stateManager);
+  const decisionManager = new DecisionManager(fs4);
+  const failureManager = new FailureManager(fs4);
+  const sessionManager = new SessionManager(fs4, stateManager);
   const explainEngine = new ExplainEngine(
-    fs2,
+    fs4,
     git,
     taskManager,
     decisionManager,
@@ -4228,13 +4980,13 @@ async function runExplain(filePath, options = {}) {
 
 // src/cli/commands/search.ts
 async function runSearch(query, options = {}) {
-  const fs2 = new FileSystem();
-  if (!fs2.isInitialized()) {
+  const fs4 = new FileSystem();
+  if (!fs4.isInitialized()) {
     TerminalFormatter.error("Continuity is not initialized. Run 'continuity init' first.");
     process.exitCode = 1;
     return;
   }
-  const indexer = new SQLiteIndexer(fs2);
+  const indexer = new SQLiteIndexer(fs4);
   await indexer.init();
   if (options.reindex) {
     const indexed = await indexer.reindexAll();
@@ -4260,17 +5012,19 @@ async function runSearch(query, options = {}) {
 
 // src/core/engine/doctor-engine.ts
 var DoctorEngine = class {
-  constructor(fs2, git, stateManager, taskManager) {
-    this.fs = fs2;
+  constructor(fs4, git, stateManager, taskManager, globalFs) {
+    this.fs = fs4;
     this.git = git;
     this.stateManager = stateManager;
     this.taskManager = taskManager;
+    this.globalFs = globalFs;
     this.redactor = new SecretRedactor();
   }
   fs;
   git;
   stateManager;
   taskManager;
+  globalFs;
   redactor;
   async runDiagnostics() {
     const checks = [];
@@ -4368,6 +5122,37 @@ var DoctorEngine = class {
         warning: leakedSecrets > 0
       });
     }
+    if (this.globalFs) {
+      const gInitialized = this.globalFs.isInitialized();
+      checks.push({
+        name: "Global Memory (~/.continuity)",
+        passed: gInitialized,
+        message: gInitialized ? `Global memory is active at ${this.globalFs.globalDir}` : `Global memory not initialized. Run "continuity device --sync" or "continuity profile"`,
+        warning: !gInitialized
+      });
+      if (gInitialized) {
+        try {
+          const detector = new DeviceDetector(this.globalFs);
+          const drifts = await detector.detectDrift();
+          if (drifts.length > 0) {
+            const driftMsgs = drifts.map((d) => `${d.tool}: stored ${d.storedVersion} -> live ${d.currentVersion}`).join("; ");
+            checks.push({
+              name: "Environment Drift",
+              passed: false,
+              message: `Drift detected (${driftMsgs}). Run "continuity device --sync" to update`,
+              warning: true
+            });
+          } else {
+            checks.push({
+              name: "Environment Drift",
+              passed: true,
+              message: "Machine environment matches stored device snapshot"
+            });
+          }
+        } catch {
+        }
+      }
+    }
     const overallHealthy = checks.every((c) => c.passed || c.warning);
     return {
       overallHealthy,
@@ -4378,11 +5163,12 @@ var DoctorEngine = class {
 
 // src/cli/commands/doctor.ts
 async function runDoctor() {
-  const fs2 = new FileSystem();
+  const fs4 = new FileSystem();
   const git = new GitClient();
-  const stateManager = new StateManager(fs2);
-  const taskManager = new TaskManager(fs2, stateManager);
-  const doctor = new DoctorEngine(fs2, git, stateManager, taskManager);
+  const stateManager = new StateManager(fs4);
+  const taskManager = new TaskManager(fs4, stateManager);
+  const gfs = new GlobalFileSystem();
+  const doctor = new DoctorEngine(fs4, git, stateManager, taskManager, gfs);
   TerminalFormatter.header("Continuity Doctor Diagnostics");
   const report = await doctor.runDiagnostics();
   for (const check of report.checks) {
@@ -4404,16 +5190,16 @@ async function runDoctor() {
 
 // src/cli/commands/export.ts
 async function runExport(options = {}) {
-  const fs2 = new FileSystem();
-  if (!fs2.isInitialized()) {
+  const fs4 = new FileSystem();
+  if (!fs4.isInitialized()) {
     TerminalFormatter.error("Continuity is not initialized. Run 'continuity init' first.");
     process.exitCode = 1;
     return;
   }
-  const stateManager = new StateManager(fs2);
-  const taskManager = new TaskManager(fs2, stateManager);
-  const decisionManager = new DecisionManager(fs2);
-  const failureManager = new FailureManager(fs2);
+  const stateManager = new StateManager(fs4);
+  const taskManager = new TaskManager(fs4, stateManager);
+  const decisionManager = new DecisionManager(fs4);
+  const failureManager = new FailureManager(fs4);
   const state = await stateManager.getState();
   const projectInfo = await stateManager.getProjectInfo();
   const architecture = await stateManager.getArchitecture();
@@ -4435,7 +5221,7 @@ async function runExport(options = {}) {
       2
     );
     if (options.output) {
-      await fs2.writeFile(fs2.resolve(options.output), payload);
+      await fs4.writeFile(fs4.resolve(options.output), payload);
       TerminalFormatter.success(`Exported JSON context to ${options.output}`);
     } else {
       console.log(payload);
@@ -4485,7 +5271,7 @@ ${failures.map((f) => `### ${f.title}
 - **Better**: ${f.betterApproach}`).join("\n\n")}
 `;
   if (options.output) {
-    await fs2.writeFile(fs2.resolve(options.output), bundle);
+    await fs4.writeFile(fs4.resolve(options.output), bundle);
     TerminalFormatter.success(`Exported Markdown context bundle to ${options.output}`);
   } else {
     console.log(bundle);
@@ -4494,19 +5280,19 @@ ${failures.map((f) => `### ${f.title}
 
 // src/cli/commands/done.ts
 async function runDone(options = {}) {
-  const fs2 = new FileSystem();
-  if (!fs2.isInitialized()) {
+  const fs4 = new FileSystem();
+  if (!fs4.isInitialized()) {
     TerminalFormatter.error("Continuity is not initialized. Run 'continuity init' first.");
     process.exitCode = 1;
     return;
   }
   const git = new GitClient();
-  const stateManager = new StateManager(fs2);
-  const taskManager = new TaskManager(fs2, stateManager);
-  const decisionManager = new DecisionManager(fs2);
-  const failureManager = new FailureManager(fs2);
-  const sessionManager = new SessionManager(fs2, stateManager);
-  const handoverManager = new HandoverManager(fs2, git, stateManager, decisionManager, failureManager);
+  const stateManager = new StateManager(fs4);
+  const taskManager = new TaskManager(fs4, stateManager);
+  const decisionManager = new DecisionManager(fs4);
+  const failureManager = new FailureManager(fs4);
+  const sessionManager = new SessionManager(fs4, stateManager);
+  const handoverManager = new HandoverManager(fs4, git, stateManager, decisionManager, failureManager);
   const gitStatus = await git.getStatus();
   const state = await stateManager.getState();
   TerminalFormatter.header("Finalizing Session & Work State");
@@ -4545,13 +5331,490 @@ async function runDone(options = {}) {
   ]);
 }
 
+// src/cli/commands/profile.ts
+async function runProfile(options = {}) {
+  const gfs = new GlobalFileSystem();
+  await gfs.initGlobalStructure();
+  const devProfilePath = gfs.resolve("profile", "developer.md");
+  const prefsPath = gfs.resolve("profile", "preferences.md");
+  const devProfile = await gfs.readFile(devProfilePath);
+  const prefs = await gfs.readFile(prefsPath);
+  if (options.json) {
+    console.log(
+      JSON.stringify(
+        {
+          developerProfile: devProfile,
+          preferences: prefs,
+          globalPath: gfs.globalDir
+        },
+        null,
+        2
+      )
+    );
+    return;
+  }
+  TerminalFormatter.header("Global Developer Profile (~/.continuity)");
+  console.log(devProfile);
+  TerminalFormatter.section("DEVELOPER PREFERENCES");
+  console.log(prefs);
+  TerminalFormatter.item("Storage Location", gfs.globalDir);
+}
+
+// src/cli/commands/device.ts
+async function runDevice(options = {}) {
+  const gfs = new GlobalFileSystem();
+  await gfs.initGlobalStructure();
+  const detector = new DeviceDetector(gfs);
+  if (options.sync) {
+    const synced = await detector.syncEnvironment();
+    TerminalFormatter.success(`Device environment synchronized to ~/.continuity/devices/${synced.id}.yml`);
+    TerminalFormatter.item("Hostname", synced.hostname);
+    TerminalFormatter.item("OS", synced.os.name);
+    TerminalFormatter.item("Architecture", synced.os.arch);
+    TerminalFormatter.item("Node Version", synced.runtimes.node || "None");
+    TerminalFormatter.item("Package Manager", synced.packageManager);
+    return;
+  }
+  const live = await detector.probeEnvironment();
+  const stored = await detector.getStoredEnvironment();
+  const drifts = await detector.detectDrift();
+  if (options.json) {
+    console.log(JSON.stringify({ live, stored, drifts }, null, 2));
+    return;
+  }
+  TerminalFormatter.header(`Device Environment: ${live.hostname}`);
+  TerminalFormatter.section("SYSTEM HARDWARE & OS");
+  TerminalFormatter.item("Operating System", live.os.name);
+  TerminalFormatter.item("Platform", live.os.platform);
+  TerminalFormatter.item("Architecture", live.os.arch);
+  TerminalFormatter.item("Kernel Release", live.os.release);
+  TerminalFormatter.item("Active Shell", live.shell || "Default");
+  TerminalFormatter.item("Default Editor", live.defaultEditor || "Default");
+  TerminalFormatter.section("DETECTED RUNTIMES");
+  for (const [rt, ver] of Object.entries(live.runtimes)) {
+    TerminalFormatter.item(rt, ver);
+  }
+  TerminalFormatter.section("INSTALLED TOOLS & SERVICES");
+  for (const [t, ver] of Object.entries(live.tools)) {
+    TerminalFormatter.item(t, ver);
+  }
+  if (drifts.length > 0) {
+    TerminalFormatter.section("ENVIRONMENT DRIFT DETECTED");
+    for (const d of drifts) {
+      TerminalFormatter.warning(
+        `${d.tool}: stored ${d.storedVersion} -> current live ${d.currentVersion}`
+      );
+    }
+    console.log('\nRun "continuity device --sync" to update stored device memory.');
+  } else if (stored) {
+    TerminalFormatter.section("HEALTH & SYNC STATUS");
+    TerminalFormatter.success("Live environment matches stored device snapshot.");
+  } else {
+    TerminalFormatter.section("INITIALIZATION");
+    console.log('No snapshot stored yet. Run "continuity device --sync" to persist.');
+  }
+}
+
+// src/cli/commands/toolchain.ts
+async function runToolchain(options = {}) {
+  const gfs = new GlobalFileSystem();
+  await gfs.initGlobalStructure();
+  const projectFs = new FileSystem();
+  const manager = new ToolchainManager(gfs, projectFs);
+  const effective = await manager.resolveEffectiveToolchain();
+  if (options.json) {
+    console.log(JSON.stringify(effective, null, 2));
+    return;
+  }
+  TerminalFormatter.header("Hierarchical Toolchain Resolution");
+  TerminalFormatter.section("EFFECTIVE RUNTIME");
+  TerminalFormatter.item("Runtime", `${effective.runtime.name} ${effective.runtime.version}`);
+  TerminalFormatter.item("Source", `${effective.runtime.source.toUpperCase()} configuration`);
+  TerminalFormatter.section("PACKAGE MANAGER");
+  TerminalFormatter.item(
+    "Package Manager",
+    effective.packageManager.version ? `${effective.packageManager.name} ${effective.packageManager.version}` : effective.packageManager.name
+  );
+  TerminalFormatter.item("Source", `${effective.packageManager.source.toUpperCase()} configuration`);
+  TerminalFormatter.section("DEVELOPER TOOLS");
+  for (const t of effective.tools) {
+    TerminalFormatter.item(t.name, `${t.version || "installed"} (${t.source})`);
+  }
+  TerminalFormatter.box("Resolution Hierarchy Rule", [
+    "Task Override  >  Project Config  >  Global Default",
+    "The local repository configuration always wins."
+  ]);
+}
+
+// src/cli/commands/account.ts
+async function runAccount(options = {}) {
+  const gfs = new GlobalFileSystem();
+  await gfs.initGlobalStructure();
+  const manager = new AccountManager(gfs);
+  const accounts = await manager.listAccounts(options.provider);
+  if (options.json) {
+    console.log(JSON.stringify(accounts.map((a) => manager.getAiSafeMetadata(a)), null, 2));
+    return;
+  }
+  TerminalFormatter.header("Developer Account Profiles (~/.continuity/accounts)");
+  if (accounts.length === 0) {
+    console.log("No account profiles configured yet.");
+    console.log("Configured in ~/.continuity/accounts/profiles.yml");
+    return;
+  }
+  const grouped = {};
+  for (const a of accounts) {
+    if (!grouped[a.provider]) grouped[a.provider] = [];
+    grouped[a.provider].push(a);
+  }
+  for (const [provider, list] of Object.entries(grouped)) {
+    TerminalFormatter.section(provider.toUpperCase());
+    for (const a of list) {
+      console.log(`  \u2022 Profile: ${a.profile}`);
+      console.log(`    Username: ${a.username}`);
+      if (a.email) console.log(`    Email: ${a.email}`);
+      console.log(`    Status: ${a.status === "authenticated" ? "\u2713 Authenticated" : "\u26A0 Unauthenticated"}`);
+      console.log(`    Credential: ${a.credentialRef} (Secure Keychain Reference)`);
+    }
+  }
+  TerminalFormatter.box("Zero-Plaintext Guarantee", [
+    "Continuity stores only secure keychain references.",
+    "Plaintext tokens/passwords are NEVER saved in markdown or sent to AI models."
+  ]);
+}
+
+// src/cli/commands/projects.ts
+import path14 from "path";
+async function runProjects(options = {}) {
+  const gfs = new GlobalFileSystem();
+  await gfs.initGlobalStructure();
+  const manager = new ProjectRegistryManager(gfs);
+  const projects = await manager.listProjects(options.category);
+  if (options.json) {
+    console.log(JSON.stringify(projects, null, 2));
+    return;
+  }
+  TerminalFormatter.header("Project Registry (~/.continuity/projects)");
+  if (projects.length === 0) {
+    console.log("\nNo projects registered yet.");
+    console.log('Run "continuity project register" inside a project directory.');
+    return;
+  }
+  const categories = [
+    "personal",
+    "client",
+    "work",
+    "open-source",
+    "learning",
+    "experimental",
+    "archived"
+  ];
+  for (const cat of categories) {
+    const matching = projects.filter((p) => p.type === cat);
+    if (matching.length === 0) continue;
+    TerminalFormatter.section(`${cat.toUpperCase()} (${matching.length})`);
+    for (const p of matching) {
+      console.log(`  \u2022 ${p.name} (id: ${p.id})`);
+      console.log(`    Path: ${p.path}`);
+      if (p.client) console.log(`    Client: ${p.client}`);
+      if (p.stack.length > 0) console.log(`    Stack: ${p.stack.join(", ")}`);
+    }
+  }
+}
+async function runProjectRegister(projectPath = ".") {
+  const gfs = new GlobalFileSystem();
+  await gfs.initGlobalStructure();
+  const manager = new ProjectRegistryManager(gfs);
+  const resolved = path14.resolve(projectPath);
+  const registered = await manager.registerProject({
+    path: resolved,
+    type: "personal"
+  });
+  TerminalFormatter.success(`Project registered in global registry: "${registered.name}"`);
+  TerminalFormatter.item("Category", registered.type.toUpperCase());
+  TerminalFormatter.item("Path", registered.path);
+}
+async function runProjectClassify(type, clientName) {
+  const gfs = new GlobalFileSystem();
+  await gfs.initGlobalStructure();
+  const manager = new ProjectRegistryManager(gfs);
+  const cwd = process.cwd();
+  const updated = await manager.classifyProject(cwd, type, clientName);
+  TerminalFormatter.success(`Project classified as "${updated.type.toUpperCase()}"`);
+  if (updated.client) {
+    TerminalFormatter.item("Client Name", updated.client);
+  }
+}
+
+// src/core/global/knowledge-manager.ts
+import path15 from "path";
+var KnowledgeManager = class {
+  constructor(gfs) {
+    this.gfs = gfs;
+  }
+  gfs;
+  get knowledgeDir() {
+    return this.gfs.resolve("knowledge");
+  }
+  get historyDir() {
+    return this.gfs.resolve("history");
+  }
+  async listArticles(category) {
+    await this.gfs.initGlobalStructure();
+    const articles = [];
+    const targetDir = category ? path15.join(this.knowledgeDir, category) : this.knowledgeDir;
+    const files = await this.gfs.listFiles(targetDir, ".md");
+    for (const file of files) {
+      const content = await this.gfs.readFile(file);
+      const relative = path15.relative(this.knowledgeDir, file);
+      const parts = relative.split(path15.sep);
+      const cat = parts.length > 1 ? parts[0] : "general";
+      const name = path15.basename(file, ".md");
+      const titleMatch = content.match(/^#\s+(.+)$/m);
+      const title = titleMatch ? titleMatch[1].trim() : name;
+      articles.push({
+        category: cat,
+        name,
+        path: file,
+        content,
+        title
+      });
+    }
+    return articles;
+  }
+  async saveArticle(category, name, content) {
+    await this.gfs.initGlobalStructure();
+    const safeName = name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const safeCat = category.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const targetPath = path15.join(this.knowledgeDir, safeCat, `${safeName}.md`);
+    await this.gfs.writeFile(targetPath, content);
+    return targetPath;
+  }
+  async getArticle(category, name) {
+    const safeName = name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const targetPath = path15.join(this.knowledgeDir, category, `${safeName}.md`);
+    if (!this.gfs.exists(targetPath)) return void 0;
+    const content = await this.gfs.readFile(targetPath);
+    const titleMatch = content.match(/^#\s+(.+)$/m);
+    return {
+      category,
+      name: safeName,
+      path: targetPath,
+      content,
+      title: titleMatch ? titleMatch[1].trim() : safeName
+    };
+  }
+};
+
+// src/cli/commands/knowledge.ts
+async function runKnowledge(category, options = {}) {
+  const gfs = new GlobalFileSystem();
+  await gfs.initGlobalStructure();
+  const manager = new KnowledgeManager(gfs);
+  const articles = await manager.listArticles(category);
+  if (options.json) {
+    console.log(JSON.stringify(articles, null, 2));
+    return;
+  }
+  TerminalFormatter.header(`Global Knowledge Base (~/.continuity/knowledge)`);
+  if (articles.length === 0) {
+    console.log(`
+No knowledge articles found${category ? ` in category '${category}'` : ""}.`);
+    console.log("Categories: ai, architecture, frontend, backend, devops");
+    console.log(`Articles are saved as Markdown in: ${gfs.resolve("knowledge")}`);
+    return;
+  }
+  const byCategory = {};
+  for (const art of articles) {
+    if (!byCategory[art.category]) byCategory[art.category] = [];
+    byCategory[art.category].push(art);
+  }
+  for (const [cat, list] of Object.entries(byCategory)) {
+    TerminalFormatter.section(cat.toUpperCase());
+    for (const art of list) {
+      console.log(`  \u2022 ${art.title} (${art.name}.md)`);
+    }
+  }
+}
+
+// src/core/global/bootstrap-engine.ts
+var BootstrapEngine = class {
+  constructor(fs4, gfs) {
+    this.fs = fs4;
+    this.gfs = gfs;
+  }
+  fs;
+  gfs;
+  async checkEnvironment() {
+    const detector = new DeviceDetector(this.gfs);
+    const live = await detector.probeEnvironment();
+    const checks = [];
+    let projectName = "Current Project";
+    let requiredNode = ">=20.0.0";
+    let requiredPm = "pnpm";
+    const requiredTools = ["git"];
+    const pkgPath = this.fs.resolve("package.json");
+    if (this.fs.exists(pkgPath)) {
+      try {
+        const pkg = JSON.parse(await this.fs.readFile(pkgPath));
+        if (pkg.name) projectName = pkg.name;
+        if (pkg.engines && pkg.engines.node) requiredNode = pkg.engines.node;
+        if (pkg.packageManager) {
+          requiredPm = pkg.packageManager.split("@")[0];
+        } else if (this.fs.exists(this.fs.resolve("pnpm-lock.yaml"))) {
+          requiredPm = "pnpm";
+        } else if (this.fs.exists(this.fs.resolve("package-lock.json"))) {
+          requiredPm = "npm";
+        } else if (this.fs.exists(this.fs.resolve("yarn.lock"))) {
+          requiredPm = "yarn";
+        } else if (this.fs.exists(this.fs.resolve("bun.lockb"))) {
+          requiredPm = "bun";
+        }
+        const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+        if (deps.pg || deps["@prisma/client"] || deps.typeorm || deps.drizzle) {
+          requiredTools.push("postgresql");
+        }
+        if (deps.sqlite3 || deps["better-sqlite3"]) {
+          requiredTools.push("sqlite");
+        }
+      } catch {
+      }
+    }
+    const installedNode = live.runtimes.node;
+    const nodeSatisfied = !!installedNode;
+    checks.push({
+      tool: "Node.js",
+      required: requiredNode,
+      installed: installedNode || "Not found",
+      satisfied: nodeSatisfied,
+      recommendation: !nodeSatisfied ? "Install Node.js via nvm, fnm, or system package manager" : void 0
+    });
+    const installedPm = live.runtimes[requiredPm];
+    const pmSatisfied = !!installedPm;
+    checks.push({
+      tool: `Package Manager (${requiredPm})`,
+      required: requiredPm,
+      installed: installedPm ? `${requiredPm} ${installedPm}` : "Not found",
+      satisfied: pmSatisfied,
+      recommendation: !pmSatisfied ? `Run: corepack enable && corepack use ${requiredPm}@latest` : void 0
+    });
+    const installedGit = live.tools.git;
+    checks.push({
+      tool: "Git",
+      required: ">=2.0.0",
+      installed: installedGit || "Not found",
+      satisfied: !!installedGit,
+      recommendation: !installedGit ? "Install Git via your package manager (e.g. sudo dnf install git)" : void 0
+    });
+    for (const tool of requiredTools) {
+      if (tool === "git") continue;
+      const installedTool = live.tools[tool];
+      const satisfied = !!installedTool;
+      checks.push({
+        tool: tool.toUpperCase(),
+        required: "Installed",
+        installed: installedTool || "Not found",
+        satisfied,
+        recommendation: !satisfied ? `Optional client tool '${tool}' is recommended for this project.` : void 0
+      });
+    }
+    const missingCount = checks.filter((c) => !c.satisfied).length;
+    return {
+      projectName,
+      checks,
+      missingCount,
+      allSatisfied: missingCount === 0
+    };
+  }
+  async generateConfig(type) {
+    const report = await this.checkEnvironment();
+    let nodeVer = "22.x";
+    const nodeCheck = report.checks.find((c) => c.tool === "Node.js");
+    if (nodeCheck && nodeCheck.installed && nodeCheck.installed !== "Not found") {
+      nodeVer = nodeCheck.installed;
+    }
+    let filePath = "";
+    let content = "";
+    if (type === "nvm") {
+      filePath = this.fs.resolve(".nvmrc");
+      content = `v${nodeVer}
+`;
+    } else if (type === "tool-versions") {
+      filePath = this.fs.resolve(".tool-versions");
+      content = `nodejs ${nodeVer}
+`;
+    } else if (type === "mise") {
+      filePath = this.fs.resolve("mise.toml");
+      content = `[tools]
+node = "${nodeVer}"
+pnpm = "latest"
+`;
+    }
+    await this.fs.writeFile(filePath, content);
+    return { path: filePath, content };
+  }
+};
+
+// src/cli/commands/bootstrap.ts
+async function runBootstrap(options = {}) {
+  const fs4 = new FileSystem();
+  const gfs = new GlobalFileSystem();
+  await gfs.initGlobalStructure();
+  const engine = new BootstrapEngine(fs4, gfs);
+  if (options.generate) {
+    const genType = options.generate.toLowerCase();
+    if (genType !== "mise" && genType !== "nvm" && genType !== "tool-versions") {
+      TerminalFormatter.error("Invalid generator type. Supported types: mise, nvm, tool-versions");
+      process.exitCode = 1;
+      return;
+    }
+    const result = await engine.generateConfig(genType);
+    TerminalFormatter.success(`Generated environment config at ${result.path}:`);
+    console.log(result.content);
+    return;
+  }
+  TerminalFormatter.header("Continuity Environment Bootstrap");
+  const report = await engine.checkEnvironment();
+  console.log(`Checking requirements for project: ${report.projectName}`);
+  TerminalFormatter.section("TOOLCHAIN STATUS");
+  for (const check of report.checks) {
+    if (check.satisfied) {
+      TerminalFormatter.success(`${check.tool.padEnd(24)}: ${check.installed}`);
+    } else {
+      TerminalFormatter.error(`${check.tool.padEnd(24)}: ${check.installed}`);
+      if (check.recommendation) {
+        console.log(`    \u21B3 Recommendation: ${check.recommendation}`);
+      }
+    }
+  }
+  TerminalFormatter.section("BOOTSTRAP VERDICT");
+  if (report.allSatisfied) {
+    TerminalFormatter.success("All required runtimes and tools are installed and ready to develop!");
+  } else {
+    TerminalFormatter.warning(
+      `${report.missingCount} tool(s) are missing or misconfigured. Follow recommendations above.`
+    );
+  }
+  console.log('\nTip: Run "continuity bootstrap --generate mise" to generate a toolchain file.');
+}
+
 // src/cli.ts
 var program = new Command();
-program.name("continuity").description("Persistent project-context and work-state system for multi-agent and human AI collaboration").version("0.2.0");
-program.command("init").description("Initialize Continuity in the current repository").option("-n, --name <name>", "Project name").option("-d, --description <desc>", "Project purpose and description").option("-s, --stack <items...>", "Key technologies / stack items").option("-f, --force", "Overwrite existing files").option("--with-agents", "Scaffold configuration files for Cursor, Claude Code, Windsurf, Cline").action(runInit);
+program.name("continuity").description("Persistent project-context and work-state system for multi-agent and human AI collaboration").version("0.3.0");
+program.command("init").description("Initialize Continuity in the current repository").option("-n, --name <name>", "Project name").option("-d, --description <desc>", "Project purpose and description").option("-s, --stack <items...>", "Key technologies / stack items").option("-t, --type <type>", "Project category (personal, client, work, open-source, learning, experimental)").option("-f, --force", "Overwrite existing files").option("--with-agents", "Scaffold configuration files for Cursor, Claude Code, Windsurf, Cline").action(runInit);
 program.command("status").description("Display current project work-state, active task, progress, and next action").option("--json", "Output machine-readable JSON").action(runStatus);
-program.command("resume").description("Assemble and load compact prioritized context for continuation by any AI agent").option("-c, --compact", "Output token-efficient compact prompt format (default)").option("--full", "Output full multi-section markdown documentation").option("--json", "Output structured JSON payload").action(runResume);
+program.command("resume").description("Assemble and load compact prioritized context for continuation by any AI agent").option("-c, --compact", "Output token-efficient compact prompt format (default)").option("--full", "Output full multi-section markdown documentation").option("--json", "Output structured JSON payload").option("--scope <scope>", "Context scope boundary: task, project, developer, global", "project").action(runResume);
 program.command("prompt [task]").description("Generate ranked 6-source AI prompt payload ready to pipe to any agent CLI").action(runPromptCommand);
+program.command("bootstrap").description("Verify machine toolchain requirements against project dependencies and advise fixes").option("--generate <format>", "Generate toolchain config: mise, nvm, tool-versions").action(runBootstrap);
+program.command("profile").description("View and manage global developer profile and preferences (~/.continuity/profile)").option("--json", "Output structured JSON").action(runProfile);
+program.command("device").description("Inspect machine hardware, runtimes, tools, shell, and detect environment drift").option("--sync", "Synchronize current live environment to ~/.continuity/devices/").option("--json", "Output structured JSON").action(runDevice);
+program.command("toolchain").description("Display hierarchical toolchain resolution (Global Default -> Project Config -> Task Override)").option("--json", "Output structured JSON").action(runToolchain);
+program.command("account").description("View developer account profiles (GitHub, npm, Docker) with secure keychain references").option("-p, --provider <provider>", "Filter by provider (github, npm, docker, aws)").option("--json", "Output AI-safe sanitized JSON").action(runAccount);
+program.command("projects").description("List all registered projects across the machine, grouped by category").option("-c, --category <category>", "Filter by category (personal, client, work, open-source)").option("--json", "Output structured JSON").action(runProjects);
+var projectCmd = program.command("project").description("Register and classify projects in global registry");
+projectCmd.command("register [path]").description("Register a project directory in the global registry (~/.continuity/projects)").action(runProjectRegister);
+projectCmd.command("classify <type>").description("Update project category (personal, client, work, open-source, learning, experimental)").option("-c, --client <name>", "Client name (for client work isolation)").action((type, opts) => runProjectClassify(type, opts.client));
+program.command("knowledge [category]").description("Query cross-project technical lessons and architectural patterns (~/.continuity/knowledge)").option("--json", "Output structured JSON").action((cat, opts) => runKnowledge(cat, opts));
 var planCmd = program.command("plan").description("Manage persistent architectural and implementation plans");
 planCmd.command("create <title>").description("Create a new persistent plan with goals, steps, constraints, and criteria").option("-g, --goal <goal>", "Plan goal statement").option("-s, --steps <items>", "Comma-separated plan steps").option("-c, --constraints <items>", "Comma-separated architectural constraints").option("-a, --criteria <items>", "Comma-separated acceptance criteria").option("--scope <items>", "Comma-separated scope boundaries").action(runPlanCreate);
 planCmd.command("list").description("List all active, blocked, completed, and abandoned plans").action(runPlanList);
@@ -4559,7 +5822,7 @@ planCmd.command("show <id>").description("Show full details, steps, constraints,
 planCmd.command("update <id>").description("Update plan steps, status, or acceptance criteria").option("--complete-step <number>", "Mark step number as completed").option("--satisfy-criterion <number>", "Mark acceptance criterion number as satisfied").option("--step-name <name>", "Update current step name").option("--block <reason>", "Mark plan as blocked with reason").option("--abandon <reason>", "Mark plan as abandoned with reason").action(runPlanUpdate);
 program.command("verify [planId]").description("Verify plan steps, acceptance criteria, git working tree, and test execution").option("--test", "Run project test suite as part of verification").action((planId, opts) => runVerify(planId, opts));
 program.command("git").description("Inspect current repository branch, commit, status, and recent commits (Levels 1 & 2)").action(runGitCommand);
-program.command("history <path>").description("Inspect temporal evolution, releases, tags, and commits for a file or module").option("-s, --symbol <symbol>", "Search when a specific symbol or function was changed (Pickaxe archaeology)").option("-l, --limit <number>", "Maximum commits to display", "15").action((path12, opts) => runHistoryCommand(path12, opts));
+program.command("history <path>").description("Inspect temporal evolution, releases, tags, and commits for a file or module").option("-s, --symbol <symbol>", "Search when a specific symbol or function was changed (Pickaxe archaeology)").option("-l, --limit <number>", "Maximum commits to display", "15").action((path16, opts) => runHistoryCommand(path16, opts));
 program.command("diff [files...]").description("Display context-aware smart diff of working tree changes").action(runDiffCommand);
 program.command("handover").description("Package current work state into an actionable continuation package").option("-t, --task <name>", "Current task name").option("-p, --progress <number>", "Progress percentage (0-100)").option("-c, --completed <items>", "Comma-separated completed items").option("-r, --remaining <items>", "Comma-separated remaining items").option("--problem <problem>", "Current blocker or problem to solve").option("--solution <solution>", "Expected solution approach").option("--file <file>", "Specific file to open for next action").option("--focus <focus>", "Specific function or block to focus on").option("--constraints <items>", "Comma-separated architectural constraints").option("--author <author>", "Author or agent identifier").action(runHandover);
 var sessionCmd = program.command("session").description("Manage and record developer and AI sessions");
@@ -4581,27 +5844,38 @@ program.command("checkpoint [name]").description("Capture a point-in-time snapsh
 program.command("restore-context <id>").description("Restore project work-state from a historical checkpoint snapshot").action(runRestoreContext);
 program.command("explain <file>").description("Explain why a file exists, its purpose, related tasks, ADRs, and historical changes").option("--json", "Output machine-readable JSON").action(runExplain);
 program.command("search <query>").description("Search across all continuity documents using SQLite FTS5").option("-t, --type <type>", "Filter by type (task, decision, session, failure, etc.)").option("-l, --limit <number>", "Maximum matches").option("--reindex", "Force complete re-indexing before search").action(runSearch);
-program.command("doctor").description("Run health checks on .continuity/, git status, secret scanning, and file integrity").action(runDoctor);
+program.command("doctor").description("Run health checks on .continuity/, git status, secret scanning, and environment drift").action(runDoctor);
 program.command("export").description("Export all project continuity context into a single Markdown or JSON bundle").option("-o, --output <file>", "Output file path").option("--json", "Export as structured JSON").action(runExport);
 program.command("done").description("Finalize the current session, record summary, and generate handover in one command").option("-s, --summary <summary>", "Summary of work accomplished").option("--next-file <file>", "Next file to open").option("--next-problem <problem>", "Next problem to address").option("--next-solution <solution>", "Expected solution approach").option("-a, --agent <agent>", "Agent identifier").action(runDone);
 program.helpInformation = () => {
   return `
 ${pc2.bold(pc2.cyan("======================================================================"))}
-  ${pc2.bold(pc2.white("CONTINUITY \u{1F504} \u2014 Portable Project Context & Work-State System"))}
+  ${pc2.bold(pc2.white("CONTINUITY \u{1F504} \u2014 Portable Project Context & Work-State System (v3)"))}
 ${pc2.bold(pc2.cyan("======================================================================"))}
 
-  ${pc2.gray("Reconstructs work from 6 sources of truth:")}
-  ${pc2.cyan("Code")} \u2022 ${pc2.green("Git History")} \u2022 ${pc2.yellow("Current State")} \u2022 ${pc2.blue("Persistent Plans")} \u2022 ${pc2.magenta("Sessions")} \u2022 ${pc2.red("ADRs & Failures")}
+  ${pc2.gray("Two-Memory Architecture:")}
+  ${pc2.cyan("Global Memory")} (~/.continuity)   \u2022 Developer Profile, Machine Devices, Accounts, Knowledge, Projects
+  ${pc2.green("Project Memory")} (.continuity)    \u2022 State, Plans, Tasks, Git History, Sessions, ADRs, Handover
 
 ${pc2.bold(pc2.yellow("USAGE:"))}
   $ continuity <command> [options]
 
 ${pc2.bold(pc2.yellow("COMMANDS BY CATEGORY:"))}
 
+  ${pc2.bold(pc2.cyan("\u{1F310} GLOBAL DEVELOPER & MACHINE MEMORY (~/.continuity)"))}
+    ${pc2.green("profile")}               View developer bio & preferences (~/.continuity/profile)
+    ${pc2.green("device")} [--sync]       Inspect OS, CPU, runtimes, tools, and detect environment drift
+    ${pc2.green("toolchain")}             Resolve effective toolchain (Global Default -> Project -> Task)
+    ${pc2.green("account")}               Account profiles & secure keychain references (Zero plain secrets)
+    ${pc2.green("projects")}              Registry of all local repositories by category (Client, Work, Personal)
+    ${pc2.green("project")} <cmd>         Register or classify projects in the global registry
+    ${pc2.green("knowledge")} [category]  Cross-project technical lessons & architectural notes
+    ${pc2.green("bootstrap")}             Check machine tools against project needs & generate config files
+
   ${pc2.bold(pc2.cyan("\u{1F680} PROJECT SETUP & HEALTH"))}
-    ${pc2.green("init")}                  Initialize Continuity, protocol, and AI agent adapters
+    ${pc2.green("init")} [--type <type>]  Initialize Continuity, protocol, and AI agent adapters
     ${pc2.green("status")}                Show current branch, active task, progress %, and next action
-    ${pc2.green("doctor")}                Validate project health, git state, and scan for leaked secrets
+    ${pc2.green("doctor")}                Validate project health, git state, secret leaks, and machine drift
 
   ${pc2.bold(pc2.cyan("\u{1F4CB} PLANS & TASKS (LIFECYCLE)"))}
     ${pc2.green("plan create")} <title>    Create persistent plan with goals, steps, criteria, constraints
@@ -4634,31 +5908,34 @@ ${pc2.bold(pc2.yellow("COMMANDS BY CATEGORY:"))}
     ${pc2.green("export")}                Bundle all continuity context into a single Markdown or JSON file
 
   ${pc2.bold(pc2.cyan("\u{1F916} AI RESUME, VERIFICATION & HANDOVER"))}
-    ${pc2.green("resume")}                Compile compact 6-source context for any AI agent to continue
+    ${pc2.green("resume")} [--scope <s>]  Compile compact 6-source context for any AI agent to continue
     ${pc2.green("prompt")} [task]         Generate ranked context payload ready to pipe to any LLM CLI
     ${pc2.green("verify")} [planId]       Evaluate plan steps, criteria, git changes, and test suite
     ${pc2.green("handover")}              Package current work into an actionable continuation package
     ${pc2.green("done")}                  One-step wrapup: record summary and generate handover
 
 ${pc2.bold(pc2.yellow("WORKFLOW DEMONSTRATION:"))}
-  ${pc2.gray("# 1. Start session or let any AI inspect context:")}
-  $ continuity resume
+  ${pc2.gray("# 1. Check machine environment readiness for project:")}
+  $ continuity bootstrap
 
-  ${pc2.gray("# 2. Query why code exists with Git archaeology:")}
+  ${pc2.gray("# 2. Start session or let any AI inspect context with scope:")}
+  $ continuity resume --scope project
+
+  ${pc2.gray("# 3. Query why code exists with Git archaeology:")}
   $ continuity history src/auth/service.ts --symbol verifyRefreshToken
 
-  ${pc2.gray("# 3. Establish a multi-step persistent plan:")}
+  ${pc2.gray("# 4. Establish a multi-step persistent plan:")}
   $ continuity plan create "Auth Refactor" --goal "JWT + rotation" \\
       --steps "Middleware,Token service,Revocation" \\
       --criteria "Tokens expire in 15m,Replay rejected"
 
-  ${pc2.gray("# 4. Check off steps as you implement code:")}
+  ${pc2.gray("# 5. Check off steps as you implement code:")}
   $ continuity plan update auth-refactor --complete-step 1
 
-  ${pc2.gray("# 5. Verify completeness before concluding session:")}
+  ${pc2.gray("# 6. Verify completeness before concluding session:")}
   $ continuity verify --test
 
-  ${pc2.gray("# 6. Handover to next AI agent without knowledge loss:")}
+  ${pc2.gray("# 7. Handover to next AI agent without knowledge loss:")}
   $ continuity done --summary "Completed middleware, ready for token service"
 `;
 };

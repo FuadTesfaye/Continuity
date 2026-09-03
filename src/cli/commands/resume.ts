@@ -9,10 +9,14 @@ import { PlanManager } from '../../core/engine/plan-manager.js';
 import { ResumeEngine } from '../../core/engine/resume-engine.js';
 import { TerminalFormatter } from '../formatters/terminal.js';
 
+import { GlobalFileSystem } from '../../core/global/global-file-system.js';
+import { ContextScope } from '../../core/types/global.js';
+
 export interface ResumeOptions {
   compact?: boolean;
   full?: boolean;
   json?: boolean;
+  scope?: string;
 }
 
 export async function runResume(options: ResumeOptions = {}): Promise<void> {
@@ -30,6 +34,7 @@ export async function runResume(options: ResumeOptions = {}): Promise<void> {
   const handoverManager = new HandoverManager(fs, git, stateManager, decisionManager, failureManager);
   const sessionManager = new SessionManager(fs, stateManager);
   const planManager = new PlanManager(fs);
+  const gfs = new GlobalFileSystem();
 
   const resumeEngine = new ResumeEngine(
     stateManager,
@@ -38,10 +43,13 @@ export async function runResume(options: ResumeOptions = {}): Promise<void> {
     failureManager,
     decisionManager,
     git,
-    planManager
+    planManager,
+    gfs
   );
 
-  const context = await resumeEngine.buildContext();
+  const context = await resumeEngine.buildContext({
+    scope: (options.scope as ContextScope) || 'project'
+  });
 
   if (options.json) {
     console.log(JSON.stringify(context, null, 2));

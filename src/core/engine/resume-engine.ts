@@ -7,11 +7,32 @@ import { PlanManager } from './plan-manager.js';
 import { GitClient, GitCommitInfo } from '../git/git-client.js';
 import { Plan } from '../types/plan.js';
 import { MarkdownHelper } from '../storage/markdown.js';
+import { GlobalFileSystem } from '../global/global-file-system.js';
+import { ToolchainManager } from '../global/toolchain-manager.js';
+import { ProjectRegistryManager } from '../global/project-registry.js';
+import { AccountManager } from '../global/account-manager.js';
+import { ContextScope } from '../types/global.js';
 
 export interface ResumeContext {
+  scope: ContextScope;
   project: string;
+  category?: string;
   purpose: string;
   architectureSummary: string;
+  developer?: {
+    name: string;
+    preferences?: string;
+  };
+  environment?: {
+    os: string;
+    runtime: string;
+    packageManager: string;
+  };
+  accountMetadata?: {
+    provider: string;
+    profile: string;
+    username: string;
+  };
   branch: string;
   commit?: string;
   currentTask: string;
@@ -58,10 +79,12 @@ export class ResumeEngine {
     private readonly failureManager: FailureManager,
     private readonly decisionManager: DecisionManager,
     private readonly git: GitClient,
-    private readonly planManager?: PlanManager
+    private readonly planManager?: PlanManager,
+    private readonly globalFs?: GlobalFileSystem
   ) {}
 
-  async buildContext(): Promise<ResumeContext> {
+  async buildContext(options: { scope?: ContextScope } = {}): Promise<ResumeContext> {
+    const scope = options.scope || 'project';
     const projectInfo = await this.stateManager.getProjectInfo();
     const state = await this.stateManager.getState();
     const gitStatus = await this.git.getStatus();
@@ -70,6 +93,48 @@ export class ResumeEngine {
     const failures = await this.failureManager.listFailures();
     const decisions = await this.decisionManager.listDecisions();
     const activePlan = this.planManager ? await this.planManager.getActivePlan() : undefined;
+
+    // Resolve Global Memory if enabled and scope permits
+    let developerInfo: ResumeContext['developer'] | undefined;
+    let environmentInfo: ResumeContext['environment'] | undefined;
+    let category: string | undefined;
+    let accountMetadata: ResumeContext['accountMetadata'] | undefined;
+
+    if (this.globalFs && scope !== 'task') {
+      try {
+        const projectFs = this.stateManager.fs;
+        const toolchainMgr = new ToolchainManager(this.globalFs, projectFs);
+        const effective = await toolchainMgr.resolveEffectiveToolchain();
+        environmentInfo = {
+          os: process.platform,
+          runtime: `${effective.runtime.name} ${effective.runtime.version} (${effective.runtime.source})`,
+          packageManager: `${effective.packageManager.name} (${effective.packageManager.source})`
+        };
+
+        const regMgr = new ProjectRegistryManager(this.globalFs);
+        const regProject = await regMgr.getProject(projectFs.rootDir || process.cwd());
+        if (regProject) {
+          category = regProject.type;
+        }
+
+        const acctMgr = new AccountManager(this.globalFs);
+        const accounts = await acctMgr.listAccounts('github');
+        if (accounts.length > 0) {
+          accountMetadata = acctMgr.getAiSafeMetadata(accounts[0]);
+        }
+
+        if (scope === 'developer' || scope === 'global') {
+          const devProfilePath = this.globalFs.resolve('profile', 'developer.md');
+          if (this.globalFs.exists(devProfilePath)) {
+            const rawDev = await this.globalFs.readFile(devProfilePath);
+            const nameMatch = rawDev.match(/Name:\s*([^\n]+)/i);
+            developerInfo = {
+              name: nameMatch ? nameMatch[1].trim() : 'Developer'
+            };
+          }
+        }
+      } catch {}
+    }
 
     // Determine next action from handover or state
     let nextAction = latestHandover?.nextAction || (typeof state.nextAction === 'object' ? state.nextAction : {
@@ -88,7 +153,6 @@ export class ResumeEngine {
       ])
     ).slice(0, 10);
 
-    // Level 2: recent commits touching relevant files or repo
     const recentCommits = await this.git.getRecentCommits(5);
 
     const previousFailedApproaches = [
@@ -120,9 +184,14 @@ export class ResumeEngine {
     }
 
     return {
+      scope,
       project: projectInfo.name || state.project,
+      category,
       purpose: projectInfo.purpose || '',
       architectureSummary: projectInfo.architecture || (projectInfo.stack.length > 0 ? projectInfo.stack.join(', ') : 'Standard'),
+      developer: developerInfo,
+      environment: environmentInfo,
+      accountMetadata,
       branch: gitStatus.branch || state.currentBranch,
       commit: gitStatus.commit?.shortHash || state.lastCommit,
       currentTask: state.currentTask,
@@ -145,11 +214,18 @@ export class ResumeEngine {
   formatCompact(ctx: ResumeContext): string {
     const lines: string[] = [
       '================ CONTINUITY RESUME ================\n',
-      `Project: ${ctx.project}`,
+      `Project: ${ctx.project}${ctx.category ? ` [Category: ${ctx.category.toUpperCase()}]` : ''}`
+    ];
+
+    if (ctx.environment) {
+      lines.push(`Environment: ${ctx.environment.runtime} | ${ctx.environment.packageManager}`);
+    }
+
+    lines.push(
       `Branch: ${ctx.branch}${ctx.commit ? ` (${ctx.commit})` : ''}`,
       `Current Task: ${ctx.currentTask} [${ctx.progress}% completed]`,
       `Status: ${ctx.currentBlocker ? `BLOCKED - ${ctx.currentBlocker}` : 'In Progress'}`
-    ];
+    );
 
     if (ctx.plan) {
       lines.push(
@@ -199,14 +275,29 @@ export class ResumeEngine {
   formatFullMarkdown(ctx: ResumeContext): string {
     const lines: string[] = [
       '# Continuity Resume Context',
-      '\n## 1. Project Identity',
+      '\n## 1. Project & Environment',
       `- **Name**: ${ctx.project}`,
+      `- **Category**: ${ctx.category ? ctx.category.toUpperCase() : 'Default'}`,
       `- **Purpose**: ${ctx.purpose || 'Not specified'}`,
-      `- **Architecture**: ${ctx.architectureSummary}`,
+      `- **Architecture**: ${ctx.architectureSummary}`
+    ];
+
+    if (ctx.environment) {
+      lines.push(
+        `- **Runtime**: \`${ctx.environment.runtime}\``,
+        `- **Package Manager**: \`${ctx.environment.packageManager}\``
+      );
+    }
+
+    if (ctx.accountMetadata) {
+      lines.push(`- **Repository Account**: ${ctx.accountMetadata.username} (${ctx.accountMetadata.profile})`);
+    }
+
+    lines.push(
       `- **Branch**: \`${ctx.branch}\``,
       `- **Commit**: \`${ctx.commit || 'unknown'}\``,
       `- **Uncommitted Changes**: ${ctx.hasUncommittedChanges ? 'Yes' : 'No'}`
-    ];
+    );
 
     if (ctx.plan) {
       lines.push(

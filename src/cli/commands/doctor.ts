@@ -3,6 +3,7 @@ import { GitClient } from '../../core/git/git-client.js';
 import { StateManager } from '../../core/engine/state-manager.js';
 import { TaskManager } from '../../core/engine/task-manager.js';
 import { DoctorEngine } from '../../core/engine/doctor-engine.js';
+import { GlobalFileSystem } from '../../core/global/global-file-system.js';
 import { TerminalFormatter } from '../formatters/terminal.js';
 
 export async function runDoctor(): Promise<void> {
@@ -10,7 +11,8 @@ export async function runDoctor(): Promise<void> {
   const git = new GitClient();
   const stateManager = new StateManager(fs);
   const taskManager = new TaskManager(fs, stateManager);
-  const doctor = new DoctorEngine(fs, git, stateManager, taskManager);
+  const gfs = new GlobalFileSystem();
+  const doctor = new DoctorEngine(fs, git, stateManager, taskManager, gfs);
 
   TerminalFormatter.header('Continuity Doctor Diagnostics');
 

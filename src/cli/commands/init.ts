@@ -20,10 +20,14 @@ import {
   CLINE_RULES_SNIPPET
 } from '../../templates/universal-skill.js';
 
+import { GlobalFileSystem } from '../../core/global/global-file-system.js';
+import { ProjectRegistryManager } from '../../core/global/project-registry.js';
+
 export interface InitOptions {
   name?: string;
   description?: string;
   stack?: string[];
+  type?: string;
   force?: boolean;
   withAgents?: boolean;
 }
@@ -138,6 +142,19 @@ export async function runInit(options: InitOptions = {}): Promise<void> {
   const indexed = await indexer.reindexAll();
   indexer.close();
   TerminalFormatter.success(`Indexed ${indexed} initial documents into SQLite cache`);
+
+  // Register project in global registry (~/.continuity)
+  try {
+    const gfs = new GlobalFileSystem();
+    const regMgr = new ProjectRegistryManager(gfs);
+    await regMgr.registerProject({
+      path: process.cwd(),
+      name: projectName,
+      type: (options.type as any) || 'personal',
+      stack: options.stack || []
+    });
+    TerminalFormatter.success(`Registered in global project registry (~/.continuity) as "${(options.type || 'personal').toUpperCase()}"`);
+  } catch {}
 
   TerminalFormatter.box('Continuity Initialized Successfully', [
     'Your repository is now equipped with Continuity.',

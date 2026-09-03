@@ -10,13 +10,54 @@
 Continuity is **not** “AI memory.”  
 It is a **portable source of truth about the work**—built on **Markdown + Git + Filesystem**, indexed with **SQLite FTS5 & Relationship Graph**, and universally compatible with **any** AI agent (Claude Code, Cursor, Windsurf, Cline, Gemini, Antigravity, OpenAI) or human engineer.
 
-> **Core Principle**: Never make the AI remember something that the project can remember for it.
+> **Core Principle**: Never make the AI remember something that the project or machine can remember for it.
+
+---
+
+## 🏛️ The Two-Memory Architecture (v3)
+
+Do not store all continuity data inside every project repository. Continuity separates context into two distinct layers:
+
+```
+                       CONTINUITY v3
+                            │
+        ┌───────────────────┴───────────────────┐
+        │                                       │
+  GLOBAL MEMORY                           PROJECT MEMORY
+ (~/.continuity/)                         (.continuity/)
+        │                                       │
+ ├── profile/ (developer bio, preferences)     ├── project.yml (identity & stack)
+ ├── devices/ (OS, CPU, runtimes, editors)     ├── state.md (current truth)
+ ├── toolchain/ (runtimes, databases, CLI)     ├── architecture.md (invariants)
+ ├── accounts/ (profiles, keychain refs)       ├── plans/ (active, blocked, done)
+ ├── projects/ (registry by category)          ├── tasks/ (lifecycle)
+ ├── knowledge/ (cross-project technical notes)├── sessions/ (summaries & raw)
+ ├── workflows/ (frontend, backend, deploy)    ├── decisions/ (ADRs)
+ ├── history/ (tech, lessons, milestones)      ├── failures/ (do not repeat)
+ └── index.db (global SQLite FTS index)        ├── handovers/ (next actions)
+        │                                      └── cache/ (project index.db)
+        │                                       │
+        └───────────────────┬───────────────────┘
+                            │
+                   HIERARCHICAL ENGINE
+                 (Defaults -> Overrides)
+                            │
+                   CLIENT ISOLATION &
+                   SCOPED CONTEXT RANKER
+                   (--scope task|project|dev)
+                            │
+                            ▼
+                         AI AGENT
+```
+
+| Memory Layer | Storage | Responsibilities |
+|---|---|---|
+| **Global Memory** | `~/.continuity/` | Developer identity, machine specs, global toolchain defaults, account profiles (secure keychain references), cross-project engineering patterns, and local project registry. |
+| **Project Memory** | `.continuity/` | Repository-specific source of truth: active plan, current task checklist, Git history, session summaries, ADRs, failures, and handover packages. |
 
 ---
 
 ## 🎬 The Workflow Experience
-
-Imagine this real-world scenario:
 
 ### 1. Today with Claude:
 You tell Claude: *"Implement authentication with refresh-token rotation."*  
@@ -31,13 +72,14 @@ continuity resume
 ```
 
 Instead of asking:
-> *"What were we doing?"*
+> *"What were we doing? Which Node version? Which package manager?"*
 
 The AI immediately receives:
 ```text
 ================ CONTINUITY RESUME ================
 
-Project: Procurement System
+Project: Procurement System [Category: CLIENT]
+Environment: node 22.x (project) | pnpm (detected)
 Branch: feature/auth-refactor (a81d92e)
 Current Task: Implement Refresh Token Rotation [65% completed]
 Status: In Progress
@@ -82,256 +124,192 @@ And the AI immediately continues from the exact line of code without asking a si
 
 ---
 
-## 🏛️ The 6 Context Sources
+## 💻 Machine Environment & Drift Diagnostics
 
-Instead of relying on a single memory file, Continuity reconstructs project state from **6 independent sources of truth**:
+Never let an AI guess your machine configuration or get surprised by tool upgrades:
 
-```
-                    CONTINUITY v2
-                          │
-         ┌────────────────┼────────────────┐
-         │                │                │
-       Code              Git            Sessions
-         │                │                │
-         │                │                │
-       Plans          Decisions         Failures
-         │                │                │
-         └────────────────┼────────────────┘
-                          │
-                   Context Ranker
-                   (No Token Bloat)
-                          │
-                          ▼
-                       AI Agent
-```
-
-| Source | Question Answered | Storage & Tooling |
-|---|---|---|
-| **1. Code** | *What exists right now?* | Working tree source code |
-| **2. Git History** | *How did we get here?* | 4-level Git inspection, pickaxe archaeology (`continuity git`, `continuity history`) |
-| **3. Current State** | *Where are we right now?* | `.continuity/state.md`, active task progress % |
-| **4. Persistent Plans** | *Where are we supposed to go?* | `.continuity/plans/{active,blocked,completed}/` |
-| **5. Sessions** | *What happened during previous work?* | `.continuity/sessions/summaries/` |
-| **6. Decisions & Failures** | *Why was it built this way? What failed?* | `.continuity/decisions/` (ADRs), `.continuity/failures/` ("Do Not Repeat") |
-
----
-
-## 🔍 Git as a First-Class Context Source
-
-Continuity intelligently retrieves repository history across **4 temporal levels** without overwhelming the LLM context window:
-
-```
-Task: "Fix payment retry logic"
- │
- ▼
-Identify Relevant Files
- │
- ▼
-Level 1: Current Git State (branch, commit, uncommitted stats)
- │
- ▼
-Level 2: Recent Commits touching active files
- │
- ▼
-Level 3: File History (temporal evolution of file over time)
- │
- ▼
-Level 4: Change Archaeology (-S pickaxe, -G regex, blame)
-```
-
-### Git CLI Demonstrations:
-
-#### Level 1 & 2: Repository Overview (`continuity git`)
 ```bash
-$ continuity git
-
-=== GIT CONTEXT OVERVIEW ===
-
-CURRENT REPOSITORY STATE
-------------------------------
-Branch          : main
-HEAD Commit     : a81d92e - feat: add payment transaction service
-Working Tree    : Uncommitted changes present
-Diff Stats      : 2 files (+45 / -12)
-
-MODIFIED FILES
-------------------------------
-  M src/payment/service.ts
-  M src/payment/repository.ts
-
-RECENT COMMITS (LEVEL 2)
-------------------------------
-• `a81d92e` Add payment transaction service (Claude, 2026-09-03)
-• `72fa31a` Add payment repository (Claude, 2026-09-03)
-• `9bd82f2` Introduce payment module (Fuad, 2026-09-02)
-```
-
-#### Level 3 & 4: Temporal Evolution & Pickaxe Archaeology (`continuity history`)
-Discovers **when and why** a specific symbol or function was introduced or modified:
-```bash
-$ continuity history src/payment/service.ts --symbol processPayment
-
-=== ARCHAEOLOGY: SYMBOL "PROCESSPAYMENT" IN SRC/PAYMENT/SERVICE.TS ===
-• `a81d92e` (2026-09-03) Move payment validation into service layer [Claude]
-• `9bd82f2` (2026-09-02) Initial payment controller logic [Fuad]
-```
-
-#### Smart Context Diff (`continuity diff`)
-Displays a focused, context-aware diff of the active task's files rather than an overwhelming dump:
-```bash
-$ continuity diff
-```
-
----
-
-## 📋 Persistent Plans & Lifecycle
-
-Plans belong to the **project**, not the AI. Claude can create a plan, GPT can edit it, Cursor can execute it, and a developer can review it.
-
-```
-.continuity/plans/
-├── active/         # Currently under execution
-├── blocked/        # Halted by external dependency or blocker
-├── completed/      # All steps and acceptance criteria satisfied
-└── abandoned/      # Canceled with explicit recorded rationale
-```
-
-### Plan Commands:
-```bash
-# Create a new plan with goal, steps, constraints, and criteria:
-continuity plan create "Payment Refactor" \
-  --goal "Separate payment orchestration from transport concerns" \
-  --steps "Extract service,Extract repository,Introduce transaction boundary,Add retry handling" \
-  --constraints "Do not change public API,No database migration" \
-  --criteria "Payment retry is idempotent,No duplicate payment records,Transactions rollback cleanly"
-
-# List plans by state:
-continuity plan list
-
-# Inspect plan steps and criteria checklist:
-continuity plan show payment-refactor
-
-# Advance plan steps as work is completed:
-continuity plan update payment-refactor --complete-step 1 --satisfy-criterion 1
-```
-
----
-
-## 🔗 The Context Graph
-
-Continuity connects project entities inside a lightweight local SQLite index (`.continuity/cache/index.db`):
-
-```
-                 PROJECT
-                    │
-         ┌──────────┼──────────┐
-         │          │          │
-       PLAN       MODULE     BRANCH
-         │          │          │
-       TASK ───── FILE ───── COMMIT
-         │          │          │
-      SESSION ── DECISION ─ FAILURE
-         │
-      HANDOVER
-```
-
-This enables multi-hop relationship queries:
-- *Given a file*, find all related ADRs, tasks, and commits.
-- *Given a task*, find all associated commits, sessions, and "Do Not Repeat" lessons.
-
----
-
-## 🎯 Context Ranker: High Signal, Zero Bloat
-
-Continuity scores each candidate piece of context before assembling the prompt:
-$$\text{Relevance} = 0.35 \times \text{FileOverlap} + 0.25 \times \text{TaskSimilarity} + 0.20 \times \text{CommitRelation} + 0.10 \times \text{Recency} + 0.10 \times \text{ExplicitReference}$$
-
-- **HIGH Priority:** Active task, current plan step, modified files, recent commits touching those files, relevant ADRs.
-- **MEDIUM Priority:** Previous related sessions, "Do Not Repeat" lessons, uncommitted diff.
-- **FILTERED:** Unrelated older sessions and commits.
-
-### Pipe Directly to Any AI:
-```bash
-# Pipe token-efficient context into Claude Code:
-continuity prompt | claude
-
-# Copy ranked prompt to clipboard for Cursor / ChatGPT:
-continuity prompt | pbcopy
-```
-
----
-
-## ✅ Automated Plan Verification (`continuity verify`)
-
-Continuity doesn't take an AI's word that a task is done. It evaluates **objective evidence**:
-```bash
-continuity verify --test
+continuity device
 ```
 
 ```text
-=== CONTINUITY PLAN & WORK VERIFICATION ===
-✓ Plan Steps Progress: 4/4 planned steps completed
-✓ Acceptance Criteria: 3/3 criteria satisfied
-✓ Automated Test Suite: All automated tests passed (22/22)
-! Working Tree State: 2 uncommitted file(s) detected
+=== DEVICE ENVIRONMENT: PRIMARY WORKSTATION ===
 
-VERIFICATION STATUS
+SYSTEM HARDWARE & OS
 ------------------------------
-Status                 : READY FOR HANDOVER
-Next Recommended Action: Commit remaining changes and run "continuity handover"
+Operating System: Fedora Linux 44 (Workstation Edition)
+Platform        : linux
+Architecture    : x64
+Active Shell    : bash
+Default Editor  : nvim
 
-┌─ Ready for Handover ────────────────────────┐
-│ All planned steps and criteria are satisfied. │
-│ Run: continuity handover                     │
-└──────────────────────────────────────────────┘
+DETECTED RUNTIMES
+------------------------------
+node            : 22.23.1
+pnpm            : 10.33.0
+npm             : 10.9.8
+python          : 3.14.7
+
+INSTALLED TOOLS & SERVICES
+------------------------------
+git             : 2.55.0
+docker          : 29.7.2
+postgresql      : 18.4
+sqlite          : 3.51.2
+```
+
+### Environment Drift Detection (`continuity doctor`):
+When you upgrade Node or tools, Continuity detects drift between your stored profile and your live machine:
+```text
+⚠ Stored Node version was 22.14.0
+  Current live version: 22.23.1
+  Status: Environment changed. Run "continuity device --sync" to update.
 ```
 
 ---
 
-## 🚀 Quickstart & Installation
+## ⚙️ Hierarchical Toolchain Resolution
 
-### 1. Installation
-Install globally:
+Continuity reconciles tool configurations with clear precedence:
+$$\text{Task Override} > \text{Project Config} > \text{Detected in Project} > \text{Global Default}$$
+
 ```bash
-npm install -g continuity
+$ continuity toolchain
+
+=== HIERARCHICAL TOOLCHAIN RESOLUTION ===
+
+EFFECTIVE RUNTIME
+------------------------------
+Runtime         : node 22.x
+Source          : PROJECT configuration (package.json)
+
+PACKAGE MANAGER
+------------------------------
+Package Manager : pnpm 10.33.0
+Source          : DETECTED configuration (pnpm-lock.yaml)
+
+DEVELOPER TOOLS
+------------------------------
+git             : 2.55.0 (global)
+docker          : 29.7.2 (global)
+postgresql      : 18.4 (global)
+```
+
+---
+
+## 🗂️ Project Registry & Client Isolation
+
+Register and categorize all local projects in `~/.continuity/projects/`:
+```bash
+# List all registered repositories across your computer:
+continuity projects
+
+# Classify a project:
+continuity project classify client --client "Acme Corp"
 # or
-pnpm add -g continuity
+continuity init --type personal
+# or
+continuity init --type open-source
 ```
 
-### 2. Initialize in Any Project
-```bash
-cd my-project
-continuity init --with-agents
-```
-This scaffolds:
-- `CONTINUITY.md` at root for automatic AI discovery.
-- `.continuity/` canonical work-state hierarchy.
-- Universal Agent Skill in `skills/continuity/SKILL.md`.
-- Adapter rules for **Cursor** (`.cursor/rules/continuity.mdc`), **Claude Code** (`CLAUDE.md`), **Windsurf** (`.windsurfrules`), and **Cline** (`.clinerules`).
+### Supported Categories:
+- `personal` — Personal pet projects and experiments
+- `client` — Professional client projects (Strict Client Isolation enforced)
+- `work` — Company work repositories
+- `open-source` — Public open-source libraries
+- `learning` — Educational and tutorial codebases
+- `experimental` — Spike prototypes and exploratory code
+- `archived` — Completed or decommissioned repositories
+
+### 🛡️ Strict Client Isolation Guarantee:
+When working inside a `client` project, Continuity guarantees that sessions, ADRs, failures, and account credentials from one client **can never leak** into another client's prompt or context.
 
 ---
 
-## 🛠️ Complete CLI Command Reference
+## 🔐 Secure Credential References (Zero Plaintext Secrets)
+
+Continuity **never** stores raw API keys, passwords, or tokens in Markdown, YAML, or SQLite. Instead, it tracks metadata and secure OS keychain references:
+
+```bash
+$ continuity account
+
+=== DEVELOPER ACCOUNT PROFILES (~/.continuity/accounts) ===
+
+GITHUB
+------------------------------
+  • Profile: personal
+    Username: FuadTesfaye
+    Status: ✓ Authenticated
+    Credential: keychain://github/personal (Secure Keychain Reference)
+
+  • Profile: work
+    Username: fuad-enterprise
+    Status: ✓ Authenticated
+    Credential: keychain://github/work (Secure Keychain Reference)
+```
+
+> **AI-Safe Rule**: AI agents only receive sanitized account metadata (`account: personal`, `user: FuadTesfaye`), never secret tokens. Let git, gh, and npm CLIs handle secret retrieval securely.
+
+---
+
+## 🛠️ Environment Bootstrap (`continuity bootstrap`)
+
+Clone a new repository and immediately verify whether your machine is equipped to run it:
+
+```bash
+$ continuity bootstrap
+
+=== CONTINUITY ENVIRONMENT BOOTSTRAP ===
+Checking requirements for project: procurement-service
+
+TOOLCHAIN STATUS
+------------------------------
+✓ Node.js                 : 22.23.1
+✓ Package Manager (pnpm)  : pnpm 10.33.0
+✓ Git                     : 2.55.0
+✗ PostgreSQL              : Not found
+    ↳ Recommendation: sudo dnf install postgresql
+
+# Generate toolchain configuration on demand:
+$ continuity bootstrap --generate mise
+$ continuity bootstrap --generate nvm
+$ continuity bootstrap --generate tool-versions
+```
+
+---
+
+## 📋 Complete CLI Command Reference (v3)
 
 Run `continuity --help` or `continuity` anytime for categorized assistance:
 
 ```text
 ======================================================================
-  CONTINUITY 🔄 — Portable Project Context & Work-State System
+  CONTINUITY 🔄 — Portable Project Context & Work-State System (v3)
 ======================================================================
 
-  Reconstructs work from 6 sources of truth:
-  Code • Git History • Current State • Persistent Plans • Sessions • ADRs & Failures
+  Two-Memory Architecture:
+  Global Memory (~/.continuity)   • Developer Profile, Machine Devices, Accounts, Knowledge, Projects
+  Project Memory (.continuity)    • State, Plans, Tasks, Git History, Sessions, ADRs, Handover
 
 USAGE:
   $ continuity <command> [options]
 
 COMMANDS BY CATEGORY:
 
+  🌐 GLOBAL DEVELOPER & MACHINE MEMORY (~/.continuity)
+    profile               View developer bio & preferences (~/.continuity/profile)
+    device [--sync]       Inspect OS, CPU, runtimes, tools, and detect environment drift
+    toolchain             Resolve effective toolchain (Global Default -> Project -> Task)
+    account               Account profiles & secure keychain references (Zero plain secrets)
+    projects              Registry of all local repositories by category (Client, Work, Personal)
+    project <cmd>         Register or classify projects in the global registry
+    knowledge [category]  Cross-project technical lessons & architectural notes
+    bootstrap             Check machine tools against project needs & generate config files
+
   🚀 PROJECT SETUP & HEALTH
-    init                  Initialize Continuity, protocol, and AI agent adapters
+    init [--type <type>]  Initialize Continuity, protocol, and AI agent adapters
     status                Show current branch, active task, progress %, and next action
-    doctor                Validate project health, git state, and scan for leaked secrets
+    doctor                Validate project health, git state, secret leaks, and machine drift
 
   📋 PLANS & TASKS (LIFECYCLE)
     plan create <title>    Create persistent plan with goals, steps, criteria, constraints
@@ -364,7 +342,7 @@ COMMANDS BY CATEGORY:
     export                Bundle all continuity context into a single Markdown or JSON file
 
   🤖 AI RESUME, VERIFICATION & HANDOVER
-    resume                Compile compact 6-source context for any AI agent to continue
+    resume [--scope <s>]  Compile compact 6-source context for any AI agent to continue
     prompt [task]         Generate ranked context payload ready to pipe to any LLM CLI
     verify [planId]       Evaluate plan steps, criteria, git changes, and test suite
     handover              Package current work into an actionable continuation package
@@ -373,13 +351,22 @@ COMMANDS BY CATEGORY:
 
 ---
 
-## 🔒 Security & Secret Redaction
+## 🎯 Scoped Resume & Prompt Pipeline
 
-Continuity includes an automatic credential and secret scanner:
-- Automatically masks keys for **OpenAI**, **Anthropic**, **Google AI**, **AWS**, **GitHub tokens**, and **generic Bearer tokens**.
-- Masks private RSA / SSH keys.
-- Excludes `.env*`, `*.pem`, and `*.key` files from indexes.
-- Scans files during `continuity doctor` to alert before any commit.
+Continuity supports 4 context scopes to prevent prompt bloat:
+- `continuity resume --scope task`: Current task checklist and uncommitted changes only.
+- `continuity resume --scope project` *(default)*: Project work-state, plan, git history, and effective environment.
+- `continuity resume --scope developer`: Includes developer profile and styling preferences.
+- `continuity resume --scope global`: Includes cross-project technical knowledge.
+
+### Pipe to LLM CLIs:
+```bash
+# Pipe directly to Claude Code:
+continuity prompt | claude
+
+# Copy to clipboard for Cursor or ChatGPT:
+continuity prompt | pbcopy
+```
 
 ---
 

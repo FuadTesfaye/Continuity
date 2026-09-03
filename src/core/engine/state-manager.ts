@@ -4,7 +4,7 @@ import { FileSystem } from '../storage/file-system.js';
 import { MarkdownHelper } from '../storage/markdown.js';
 
 export class StateManager {
-  constructor(private readonly fs: FileSystem) {}
+  constructor(public readonly fs: FileSystem) {}
 
   async getState(): Promise<ContinuityState> {
     const statePath = this.fs.resolveContinuity('state.md');

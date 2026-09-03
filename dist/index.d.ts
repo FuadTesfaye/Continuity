@@ -654,6 +654,379 @@ interface GraphNode {
     metadata?: Record<string, any>;
 }
 
+declare const ProjectCategorySchema: z.ZodEnum<["personal", "client", "work", "open-source", "learning", "experimental", "archived"]>;
+type ProjectCategory = z.infer<typeof ProjectCategorySchema>;
+declare const ProjectRegistryItemSchema: z.ZodObject<{
+    id: z.ZodString;
+    name: z.ZodString;
+    type: z.ZodDefault<z.ZodEnum<["personal", "client", "work", "open-source", "learning", "experimental", "archived"]>>;
+    path: z.ZodString;
+    client: z.ZodOptional<z.ZodString>;
+    repository: z.ZodOptional<z.ZodObject<{
+        provider: z.ZodDefault<z.ZodString>;
+        accountProfile: z.ZodDefault<z.ZodString>;
+        owner: z.ZodOptional<z.ZodString>;
+        name: z.ZodOptional<z.ZodString>;
+        url: z.ZodOptional<z.ZodString>;
+    }, "strip", z.ZodTypeAny, {
+        provider: string;
+        accountProfile: string;
+        name?: string | undefined;
+        owner?: string | undefined;
+        url?: string | undefined;
+    }, {
+        name?: string | undefined;
+        provider?: string | undefined;
+        accountProfile?: string | undefined;
+        owner?: string | undefined;
+        url?: string | undefined;
+    }>>;
+    stack: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
+    continuityEnabled: z.ZodDefault<z.ZodBoolean>;
+    lastAccessed: z.ZodString;
+}, "strip", z.ZodTypeAny, {
+    path: string;
+    type: "personal" | "client" | "work" | "open-source" | "learning" | "experimental" | "archived";
+    id: string;
+    name: string;
+    stack: string[];
+    continuityEnabled: boolean;
+    lastAccessed: string;
+    repository?: {
+        provider: string;
+        accountProfile: string;
+        name?: string | undefined;
+        owner?: string | undefined;
+        url?: string | undefined;
+    } | undefined;
+    client?: string | undefined;
+}, {
+    path: string;
+    id: string;
+    name: string;
+    lastAccessed: string;
+    type?: "personal" | "client" | "work" | "open-source" | "learning" | "experimental" | "archived" | undefined;
+    stack?: string[] | undefined;
+    repository?: {
+        name?: string | undefined;
+        provider?: string | undefined;
+        accountProfile?: string | undefined;
+        owner?: string | undefined;
+        url?: string | undefined;
+    } | undefined;
+    client?: string | undefined;
+    continuityEnabled?: boolean | undefined;
+}>;
+type ProjectRegistryItem = z.infer<typeof ProjectRegistryItemSchema>;
+declare const ProjectRegistrySchema: z.ZodObject<{
+    version: z.ZodDefault<z.ZodString>;
+    updatedAt: z.ZodString;
+    projects: z.ZodDefault<z.ZodArray<z.ZodObject<{
+        id: z.ZodString;
+        name: z.ZodString;
+        type: z.ZodDefault<z.ZodEnum<["personal", "client", "work", "open-source", "learning", "experimental", "archived"]>>;
+        path: z.ZodString;
+        client: z.ZodOptional<z.ZodString>;
+        repository: z.ZodOptional<z.ZodObject<{
+            provider: z.ZodDefault<z.ZodString>;
+            accountProfile: z.ZodDefault<z.ZodString>;
+            owner: z.ZodOptional<z.ZodString>;
+            name: z.ZodOptional<z.ZodString>;
+            url: z.ZodOptional<z.ZodString>;
+        }, "strip", z.ZodTypeAny, {
+            provider: string;
+            accountProfile: string;
+            name?: string | undefined;
+            owner?: string | undefined;
+            url?: string | undefined;
+        }, {
+            name?: string | undefined;
+            provider?: string | undefined;
+            accountProfile?: string | undefined;
+            owner?: string | undefined;
+            url?: string | undefined;
+        }>>;
+        stack: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
+        continuityEnabled: z.ZodDefault<z.ZodBoolean>;
+        lastAccessed: z.ZodString;
+    }, "strip", z.ZodTypeAny, {
+        path: string;
+        type: "personal" | "client" | "work" | "open-source" | "learning" | "experimental" | "archived";
+        id: string;
+        name: string;
+        stack: string[];
+        continuityEnabled: boolean;
+        lastAccessed: string;
+        repository?: {
+            provider: string;
+            accountProfile: string;
+            name?: string | undefined;
+            owner?: string | undefined;
+            url?: string | undefined;
+        } | undefined;
+        client?: string | undefined;
+    }, {
+        path: string;
+        id: string;
+        name: string;
+        lastAccessed: string;
+        type?: "personal" | "client" | "work" | "open-source" | "learning" | "experimental" | "archived" | undefined;
+        stack?: string[] | undefined;
+        repository?: {
+            name?: string | undefined;
+            provider?: string | undefined;
+            accountProfile?: string | undefined;
+            owner?: string | undefined;
+            url?: string | undefined;
+        } | undefined;
+        client?: string | undefined;
+        continuityEnabled?: boolean | undefined;
+    }>, "many">>;
+}, "strip", z.ZodTypeAny, {
+    version: string;
+    updatedAt: string;
+    projects: {
+        path: string;
+        type: "personal" | "client" | "work" | "open-source" | "learning" | "experimental" | "archived";
+        id: string;
+        name: string;
+        stack: string[];
+        continuityEnabled: boolean;
+        lastAccessed: string;
+        repository?: {
+            provider: string;
+            accountProfile: string;
+            name?: string | undefined;
+            owner?: string | undefined;
+            url?: string | undefined;
+        } | undefined;
+        client?: string | undefined;
+    }[];
+}, {
+    updatedAt: string;
+    version?: string | undefined;
+    projects?: {
+        path: string;
+        id: string;
+        name: string;
+        lastAccessed: string;
+        type?: "personal" | "client" | "work" | "open-source" | "learning" | "experimental" | "archived" | undefined;
+        stack?: string[] | undefined;
+        repository?: {
+            name?: string | undefined;
+            provider?: string | undefined;
+            accountProfile?: string | undefined;
+            owner?: string | undefined;
+            url?: string | undefined;
+        } | undefined;
+        client?: string | undefined;
+        continuityEnabled?: boolean | undefined;
+    }[] | undefined;
+}>;
+type ProjectRegistry = z.infer<typeof ProjectRegistrySchema>;
+declare const DeviceEnvironmentSchema: z.ZodObject<{
+    id: z.ZodString;
+    name: z.ZodString;
+    hostname: z.ZodString;
+    os: z.ZodObject<{
+        name: z.ZodString;
+        platform: z.ZodString;
+        release: z.ZodString;
+        arch: z.ZodString;
+    }, "strip", z.ZodTypeAny, {
+        name: string;
+        platform: string;
+        release: string;
+        arch: string;
+    }, {
+        name: string;
+        platform: string;
+        release: string;
+        arch: string;
+    }>;
+    runtimes: z.ZodDefault<z.ZodRecord<z.ZodString, z.ZodString>>;
+    tools: z.ZodDefault<z.ZodRecord<z.ZodString, z.ZodString>>;
+    shell: z.ZodOptional<z.ZodString>;
+    defaultEditor: z.ZodOptional<z.ZodString>;
+    packageManager: z.ZodDefault<z.ZodString>;
+    updatedAt: z.ZodString;
+}, "strip", z.ZodTypeAny, {
+    id: string;
+    updatedAt: string;
+    name: string;
+    hostname: string;
+    os: {
+        name: string;
+        platform: string;
+        release: string;
+        arch: string;
+    };
+    runtimes: Record<string, string>;
+    tools: Record<string, string>;
+    packageManager: string;
+    shell?: string | undefined;
+    defaultEditor?: string | undefined;
+}, {
+    id: string;
+    updatedAt: string;
+    name: string;
+    hostname: string;
+    os: {
+        name: string;
+        platform: string;
+        release: string;
+        arch: string;
+    };
+    runtimes?: Record<string, string> | undefined;
+    tools?: Record<string, string> | undefined;
+    shell?: string | undefined;
+    defaultEditor?: string | undefined;
+    packageManager?: string | undefined;
+}>;
+type DeviceEnvironment = z.infer<typeof DeviceEnvironmentSchema>;
+declare const AccountProfileSchema: z.ZodObject<{
+    provider: z.ZodString;
+    profile: z.ZodString;
+    username: z.ZodString;
+    email: z.ZodOptional<z.ZodString>;
+    credentialRef: z.ZodString;
+    status: z.ZodDefault<z.ZodEnum<["authenticated", "unauthenticated", "unknown"]>>;
+    scopes: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
+    updatedAt: z.ZodDefault<z.ZodString>;
+}, "strip", z.ZodTypeAny, {
+    status: "unknown" | "authenticated" | "unauthenticated";
+    updatedAt: string;
+    provider: string;
+    profile: string;
+    username: string;
+    credentialRef: string;
+    scopes: string[];
+    email?: string | undefined;
+}, {
+    provider: string;
+    profile: string;
+    username: string;
+    credentialRef: string;
+    status?: "unknown" | "authenticated" | "unauthenticated" | undefined;
+    updatedAt?: string | undefined;
+    email?: string | undefined;
+    scopes?: string[] | undefined;
+}>;
+type AccountProfile = z.infer<typeof AccountProfileSchema>;
+declare const AccountRegistrySchema: z.ZodObject<{
+    version: z.ZodDefault<z.ZodString>;
+    updatedAt: z.ZodString;
+    accounts: z.ZodDefault<z.ZodRecord<z.ZodString, z.ZodRecord<z.ZodString, z.ZodObject<{
+        provider: z.ZodString;
+        profile: z.ZodString;
+        username: z.ZodString;
+        email: z.ZodOptional<z.ZodString>;
+        credentialRef: z.ZodString;
+        status: z.ZodDefault<z.ZodEnum<["authenticated", "unauthenticated", "unknown"]>>;
+        scopes: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
+        updatedAt: z.ZodDefault<z.ZodString>;
+    }, "strip", z.ZodTypeAny, {
+        status: "unknown" | "authenticated" | "unauthenticated";
+        updatedAt: string;
+        provider: string;
+        profile: string;
+        username: string;
+        credentialRef: string;
+        scopes: string[];
+        email?: string | undefined;
+    }, {
+        provider: string;
+        profile: string;
+        username: string;
+        credentialRef: string;
+        status?: "unknown" | "authenticated" | "unauthenticated" | undefined;
+        updatedAt?: string | undefined;
+        email?: string | undefined;
+        scopes?: string[] | undefined;
+    }>>>>;
+}, "strip", z.ZodTypeAny, {
+    version: string;
+    updatedAt: string;
+    accounts: Record<string, Record<string, {
+        status: "unknown" | "authenticated" | "unauthenticated";
+        updatedAt: string;
+        provider: string;
+        profile: string;
+        username: string;
+        credentialRef: string;
+        scopes: string[];
+        email?: string | undefined;
+    }>>;
+}, {
+    updatedAt: string;
+    version?: string | undefined;
+    accounts?: Record<string, Record<string, {
+        provider: string;
+        profile: string;
+        username: string;
+        credentialRef: string;
+        status?: "unknown" | "authenticated" | "unauthenticated" | undefined;
+        updatedAt?: string | undefined;
+        email?: string | undefined;
+        scopes?: string[] | undefined;
+    }>> | undefined;
+}>;
+type AccountRegistry = z.infer<typeof AccountRegistrySchema>;
+declare const DeveloperProfileSchema: z.ZodObject<{
+    name: z.ZodDefault<z.ZodString>;
+    title: z.ZodOptional<z.ZodString>;
+    primaryLanguages: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
+    preferredStack: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
+    preferredPackageManager: z.ZodDefault<z.ZodString>;
+    preferredArchitecture: z.ZodDefault<z.ZodString>;
+    uiPreferences: z.ZodDefault<z.ZodString>;
+    updatedAt: z.ZodString;
+}, "strip", z.ZodTypeAny, {
+    updatedAt: string;
+    name: string;
+    primaryLanguages: string[];
+    preferredStack: string[];
+    preferredPackageManager: string;
+    preferredArchitecture: string;
+    uiPreferences: string;
+    title?: string | undefined;
+}, {
+    updatedAt: string;
+    title?: string | undefined;
+    name?: string | undefined;
+    primaryLanguages?: string[] | undefined;
+    preferredStack?: string[] | undefined;
+    preferredPackageManager?: string | undefined;
+    preferredArchitecture?: string | undefined;
+    uiPreferences?: string | undefined;
+}>;
+type DeveloperProfile = z.infer<typeof DeveloperProfileSchema>;
+declare const ContextScopeSchema: z.ZodEnum<["task", "project", "developer", "global"]>;
+type ContextScope = z.infer<typeof ContextScopeSchema>;
+interface EffectiveToolchain {
+    runtime: {
+        name: string;
+        version: string;
+        source: 'task' | 'project' | 'global' | 'detected';
+    };
+    packageManager: {
+        name: string;
+        version?: string;
+        source: 'task' | 'project' | 'global' | 'detected';
+    };
+    tools: Array<{
+        name: string;
+        version?: string;
+        source: 'project' | 'global' | 'detected';
+    }>;
+}
+interface EnvironmentDrift {
+    tool: string;
+    storedVersion: string;
+    currentVersion: string;
+    driftDetected: boolean;
+}
+
 interface GitCommitInfo {
     hash: string;
     shortHash: string;
@@ -828,7 +1201,7 @@ declare class SQLiteIndexer {
 }
 
 declare class StateManager {
-    private readonly fs;
+    readonly fs: FileSystem;
     constructor(fs: FileSystem);
     getState(): Promise<ContinuityState>;
     saveState(state: Partial<ContinuityState>): Promise<ContinuityState>;
@@ -984,7 +1357,7 @@ declare class PlanManager {
         steps: Array<{
             description: string;
             files?: string[];
-        }>;
+        } | string>;
         constraints?: string[];
         dependencies?: string[];
         acceptanceCriteria?: string[];
@@ -1016,10 +1389,41 @@ declare class PlanManager {
     private parsePlanMarkdown;
 }
 
+declare class GlobalFileSystem {
+    readonly globalDir: string;
+    constructor(customGlobalDir?: string);
+    resolve(...subpaths: string[]): string;
+    exists(filePath?: string): boolean;
+    isInitialized(): boolean;
+    ensureDir(dirPath: string): Promise<void>;
+    readFile(filePath: string): Promise<string>;
+    writeFile(filePath: string, content: string): Promise<void>;
+    readYaml<T>(filePath: string): Promise<T | undefined>;
+    writeYaml<T>(filePath: string, data: T): Promise<void>;
+    listFiles(dirPath: string, extension?: string): Promise<string[]>;
+    initGlobalStructure(): Promise<void>;
+}
+
 interface ResumeContext {
+    scope: ContextScope;
     project: string;
+    category?: string;
     purpose: string;
     architectureSummary: string;
+    developer?: {
+        name: string;
+        preferences?: string;
+    };
+    environment?: {
+        os: string;
+        runtime: string;
+        packageManager: string;
+    };
+    accountMetadata?: {
+        provider: string;
+        profile: string;
+        username: string;
+    };
     branch: string;
     commit?: string;
     currentTask: string;
@@ -1069,8 +1473,11 @@ declare class ResumeEngine {
     private readonly decisionManager;
     private readonly git;
     private readonly planManager?;
-    constructor(stateManager: StateManager, handoverManager: HandoverManager, sessionManager: SessionManager, failureManager: FailureManager, decisionManager: DecisionManager, git: GitClient, planManager?: PlanManager | undefined);
-    buildContext(): Promise<ResumeContext>;
+    private readonly globalFs?;
+    constructor(stateManager: StateManager, handoverManager: HandoverManager, sessionManager: SessionManager, failureManager: FailureManager, decisionManager: DecisionManager, git: GitClient, planManager?: PlanManager | undefined, globalFs?: GlobalFileSystem | undefined);
+    buildContext(options?: {
+        scope?: ContextScope;
+    }): Promise<ResumeContext>;
     formatCompact(ctx: ResumeContext): string;
     formatFullMarkdown(ctx: ResumeContext): string;
 }
@@ -1115,8 +1522,9 @@ declare class DoctorEngine {
     private readonly git;
     private readonly stateManager;
     private readonly taskManager;
+    private readonly globalFs?;
     private redactor;
-    constructor(fs: FileSystem, git: GitClient, stateManager: StateManager, taskManager: TaskManager);
+    constructor(fs: FileSystem, git: GitClient, stateManager: StateManager, taskManager: TaskManager, globalFs?: GlobalFileSystem | undefined);
     runDiagnostics(): Promise<DoctorReport>;
 }
 
@@ -1163,6 +1571,106 @@ declare class VerificationEngine {
     verify(planId?: string, runTests?: boolean): Promise<VerificationReport>;
 }
 
+declare class DeviceDetector {
+    private readonly gfs;
+    constructor(gfs: GlobalFileSystem);
+    private runCommand;
+    private getPrettyOsName;
+    probeEnvironment(): Promise<DeviceEnvironment>;
+    getStoredEnvironment(deviceId?: string): Promise<DeviceEnvironment | undefined>;
+    syncEnvironment(deviceId?: string): Promise<DeviceEnvironment>;
+    detectDrift(deviceId?: string): Promise<EnvironmentDrift[]>;
+}
+
+declare class ToolchainManager {
+    private readonly gfs;
+    private readonly projectFs?;
+    private readonly detector?;
+    constructor(gfs: GlobalFileSystem, projectFs?: FileSystem | undefined, detector?: DeviceDetector | undefined);
+    resolveEffectiveToolchain(taskOverride?: {
+        nodeVersion?: string;
+        packageManager?: string;
+    }): Promise<EffectiveToolchain>;
+}
+
+declare class ProjectRegistryManager {
+    private readonly gfs;
+    constructor(gfs: GlobalFileSystem);
+    private get registryFile();
+    getRegistry(): Promise<ProjectRegistry>;
+    private saveRegistry;
+    listProjects(category?: ProjectCategory): Promise<ProjectRegistryItem[]>;
+    getProject(idOrPath: string): Promise<ProjectRegistryItem | undefined>;
+    registerProject(data: {
+        path: string;
+        name?: string;
+        type?: ProjectCategory;
+        client?: string;
+        repository?: ProjectRegistryItem['repository'];
+        stack?: string[];
+    }): Promise<ProjectRegistryItem>;
+    classifyProject(idOrPath: string, type: ProjectCategory, clientName?: string): Promise<ProjectRegistryItem>;
+    touchProject(idOrPath: string): Promise<void>;
+    validateClientIsolation(activeProject: ProjectRegistryItem | undefined, targetProject: ProjectRegistryItem | undefined): boolean;
+}
+
+declare class AccountManager {
+    private readonly gfs;
+    constructor(gfs: GlobalFileSystem);
+    private get accountsFile();
+    getRegistry(): Promise<AccountRegistry>;
+    listAccounts(provider?: string): Promise<AccountProfile[]>;
+    getAccount(provider: string, profile: string): Promise<AccountProfile | undefined>;
+    setAccountProfile(profile: AccountProfile): Promise<AccountProfile>;
+    getAiSafeMetadata(profile: AccountProfile): {
+        provider: string;
+        profile: string;
+        username: string;
+        status: string;
+    };
+}
+
+interface KnowledgeArticle {
+    category: string;
+    name: string;
+    path: string;
+    content: string;
+    title: string;
+}
+declare class KnowledgeManager {
+    private readonly gfs;
+    constructor(gfs: GlobalFileSystem);
+    private get knowledgeDir();
+    private get historyDir();
+    listArticles(category?: string): Promise<KnowledgeArticle[]>;
+    saveArticle(category: string, name: string, content: string): Promise<string>;
+    getArticle(category: string, name: string): Promise<KnowledgeArticle | undefined>;
+}
+
+interface BootstrapCheck {
+    tool: string;
+    required?: string;
+    installed?: string;
+    satisfied: boolean;
+    recommendation?: string;
+}
+interface BootstrapReport {
+    projectName: string;
+    checks: BootstrapCheck[];
+    missingCount: number;
+    allSatisfied: boolean;
+}
+declare class BootstrapEngine {
+    private readonly fs;
+    private readonly gfs;
+    constructor(fs: FileSystem, gfs: GlobalFileSystem);
+    checkEnvironment(): Promise<BootstrapReport>;
+    generateConfig(type: 'mise' | 'nvm' | 'tool-versions'): Promise<{
+        path: string;
+        content: string;
+    }>;
+}
+
 declare const DEFAULT_CONTINUITY_MD = "# Continuity Protocol\n\nThis project uses the **Continuity** persistent context and work-state system.\nContinuity is the portable, machine-readable and human-readable source of truth about the work.\n\n## Before Working (Session Start)\n1. Run `continuity resume` (or inspect `.continuity/state.md`).\n2. Read `.continuity/project.md` and `.continuity/architecture.md` to understand system boundaries.\n3. Inspect Git status: `git status` to check for any uncommitted changes or current branch.\n4. Read the **Next Action** recorded in `.continuity/state.md` and continue directly from it.\n5. Check `.continuity/failures/` to make sure you do NOT attempt previously failed approaches.\n\n## While Working\n- Respect existing architectural decisions recorded in `.continuity/decisions/`.\n- If an approach fails, record it with `continuity failure record`.\n- If you make a significant architectural or design decision, log it with `continuity decision`.\n- Update task progress as you complete checklist items: `continuity task update`.\n\n## After Completing Work (Session End)\n1. Run `continuity handover` or `continuity done` to capture:\n   - What was completed\n   - What remains\n   - Files changed\n   - Known blockers or bugs\n   - Concrete, actionable **Next Action** (file, problem, expected solution, and constraints)\n2. Save your session record: `continuity session save`.\n\nDo not make the next AI or developer ask \"What were we doing?\". Leave the project ready to continue.\n";
 declare const DEFAULT_PROJECT_MD: (projectName: string, description?: string, stack?: string[]) => string;
 declare const DEFAULT_STATE_MD: (projectName: string, branch?: string) => string;
@@ -1177,4 +1685,4 @@ declare const CLAUDE_CODE_SNIPPET = "# Continuity Protocol (Claude Code)\n\nThis
 declare const WINDSURF_RULES_SNIPPET = "# Continuity Rules for Windsurf\n- On task start: Run `continuity resume` and follow Next Action.\n- Do not repeat approaches documented in `.continuity/failures/`.\n- On completion: Run `continuity handover`.\n";
 declare const CLINE_RULES_SNIPPET = "# Continuity Protocol for Cline / Roo-Code\nAlways check `.continuity/state.md` before beginning.\nResume context using `continuity resume`.\nRecord failed attempts into `.continuity/failures/`.\nGenerate handover on completion using `continuity handover`.\n";
 
-export { type AcceptanceCriterion, AcceptanceCriterionSchema, CLAUDE_CODE_SNIPPET, CLINE_RULES_SNIPPET, CURSOR_RULES_MDC, type ContextCandidates, type ContextItem, ContextRanker, type ContextSourceType, type ContextTier, type ContinuityConfig, ContinuityConfigSchema, type ContinuityState, ContinuityStateSchema, DEFAULT_ARCHITECTURE_MD, DEFAULT_CONFIG_YML, DEFAULT_CONTINUITY_MD, DEFAULT_INDEX_MD, DEFAULT_PROJECT_MD, DEFAULT_ROADMAP_MD, DEFAULT_STATE_MD, type Decision, DecisionManager, DecisionSchema, type DoctorCheck, DoctorEngine, type DoctorReport, type EntityRelationship, type EntityType, ExplainEngine, type Failure, FailureManager, FailureSchema, type FileExplanation, FileSystem, type GitBlameLine, GitClient, type GitCommitInfo, type GitStatusInfo, type GitTagInfo, type GraphNode, type Handover, HandoverManager, HandoverSchema, type IndexedDocument, MarkdownHelper, type ModuleEvolution, type NextAction, NextActionSchema, type ParsedMarkdown, type Plan, PlanManager, PlanSchema, type PlanStatus, PlanStatusSchema, type PlanStep, PlanStepSchema, type ProjectInfo, ProjectInfoSchema, type RankedContextPayload, type RawSession, type RedactionResult, type ResumeContext, ResumeEngine, SQLiteIndexer, type SearchResult, SecretRedactor, SessionManager, type SessionSummary, SessionSummarySchema, StateManager, type TaskItem, TaskItemSchema, TaskManager, type TaskStatus, TaskStatusSchema, UNIVERSAL_SKILL_MD, VerificationEngine, type VerificationReport, WINDSURF_RULES_SNIPPET };
+export { type AcceptanceCriterion, AcceptanceCriterionSchema, AccountManager, type AccountProfile, AccountProfileSchema, type AccountRegistry, AccountRegistrySchema, type BootstrapCheck, BootstrapEngine, type BootstrapReport, CLAUDE_CODE_SNIPPET, CLINE_RULES_SNIPPET, CURSOR_RULES_MDC, type ContextCandidates, type ContextItem, ContextRanker, type ContextScope, ContextScopeSchema, type ContextSourceType, type ContextTier, type ContinuityConfig, ContinuityConfigSchema, type ContinuityState, ContinuityStateSchema, DEFAULT_ARCHITECTURE_MD, DEFAULT_CONFIG_YML, DEFAULT_CONTINUITY_MD, DEFAULT_INDEX_MD, DEFAULT_PROJECT_MD, DEFAULT_ROADMAP_MD, DEFAULT_STATE_MD, type Decision, DecisionManager, DecisionSchema, type DeveloperProfile, DeveloperProfileSchema, DeviceDetector, type DeviceEnvironment, DeviceEnvironmentSchema, type DoctorCheck, DoctorEngine, type DoctorReport, type EffectiveToolchain, type EntityRelationship, type EntityType, type EnvironmentDrift, ExplainEngine, type Failure, FailureManager, FailureSchema, type FileExplanation, FileSystem, type GitBlameLine, GitClient, type GitCommitInfo, type GitStatusInfo, type GitTagInfo, GlobalFileSystem, type GraphNode, type Handover, HandoverManager, HandoverSchema, type IndexedDocument, type KnowledgeArticle, KnowledgeManager, MarkdownHelper, type ModuleEvolution, type NextAction, NextActionSchema, type ParsedMarkdown, type Plan, PlanManager, PlanSchema, type PlanStatus, PlanStatusSchema, type PlanStep, PlanStepSchema, type ProjectCategory, ProjectCategorySchema, type ProjectInfo, ProjectInfoSchema, type ProjectRegistry, type ProjectRegistryItem, ProjectRegistryItemSchema, ProjectRegistryManager, ProjectRegistrySchema, type RankedContextPayload, type RawSession, type RedactionResult, type ResumeContext, ResumeEngine, SQLiteIndexer, type SearchResult, SecretRedactor, SessionManager, type SessionSummary, SessionSummarySchema, StateManager, type TaskItem, TaskItemSchema, TaskManager, type TaskStatus, TaskStatusSchema, ToolchainManager, UNIVERSAL_SKILL_MD, VerificationEngine, type VerificationReport, WINDSURF_RULES_SNIPPET };

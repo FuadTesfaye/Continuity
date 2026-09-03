@@ -1,6 +1,6 @@
 {
   "name": "continuity",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "Persistent project-context and work-state system for multi-agent and human AI collaboration",
   "type": "module",
   "bin": {
