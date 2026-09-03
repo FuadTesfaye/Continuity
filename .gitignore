@@ -1,3 +1,10 @@
+# Dependencies
+node_modules/
+
+# Production build output
+dist/
+
 # Continuity local cache and raw transcripts
 .continuity/cache/
 .continuity/sessions/raw/
+*.tmp
