@@ -7,3 +7,4 @@ export * from './handover-manager.js';
 export * from './resume-engine.js';
 export * from './explain-engine.js';
 export * from './doctor-engine.js';
+export * from './plan-manager.js';

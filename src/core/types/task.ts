@@ -13,6 +13,9 @@ export const TaskItemSchema = z.object({
   remaining: z.array(z.string()).default([]),
   blockers: z.array(z.string()).default([]),
   relatedFiles: z.array(z.string()).default([]),
+  planId: z.string().optional(),
+  commits: z.array(z.string()).default([]),
+  acceptanceCriteria: z.array(z.string()).default([]),
   createdAt: z.string(),
   updatedAt: z.string(),
   completedAt: z.string().optional()

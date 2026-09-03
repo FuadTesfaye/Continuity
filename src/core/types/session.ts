@@ -12,6 +12,10 @@ export const SessionSummarySchema = z.object({
   decisions: z.array(z.string()).default([]),
   failedApproaches: z.array(z.string()).default([]),
   problems: z.array(z.string()).default([]),
+  planId: z.string().optional(),
+  commitsCreated: z.array(z.string()).default([]),
+  stagedChanges: z.array(z.string()).default([]),
+  unstagedChanges: z.array(z.string()).default([]),
   nextStep: z.string().optional(),
   importantContext: z.string().optional(),
   gitCommit: z.string().optional()

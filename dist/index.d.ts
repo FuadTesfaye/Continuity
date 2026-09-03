@@ -80,6 +80,9 @@ declare const TaskItemSchema: z.ZodObject<{
     remaining: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
     blockers: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
     relatedFiles: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
+    planId: z.ZodOptional<z.ZodString>;
+    commits: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
+    acceptanceCriteria: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
     createdAt: z.ZodString;
     updatedAt: z.ZodString;
     completedAt: z.ZodOptional<z.ZodString>;
@@ -92,9 +95,12 @@ declare const TaskItemSchema: z.ZodObject<{
     remaining: string[];
     blockers: string[];
     relatedFiles: string[];
+    commits: string[];
+    acceptanceCriteria: string[];
     createdAt: string;
     updatedAt: string;
     description?: string | undefined;
+    planId?: string | undefined;
     completedAt?: string | undefined;
 }, {
     id: string;
@@ -108,6 +114,9 @@ declare const TaskItemSchema: z.ZodObject<{
     remaining?: string[] | undefined;
     blockers?: string[] | undefined;
     relatedFiles?: string[] | undefined;
+    planId?: string | undefined;
+    commits?: string[] | undefined;
+    acceptanceCriteria?: string[] | undefined;
     completedAt?: string | undefined;
 }>;
 type TaskItem = z.infer<typeof TaskItemSchema>;
@@ -196,6 +205,10 @@ declare const SessionSummarySchema: z.ZodObject<{
     decisions: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
     failedApproaches: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
     problems: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
+    planId: z.ZodOptional<z.ZodString>;
+    commitsCreated: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
+    stagedChanges: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
+    unstagedChanges: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
     nextStep: z.ZodOptional<z.ZodString>;
     importantContext: z.ZodOptional<z.ZodString>;
     gitCommit: z.ZodOptional<z.ZodString>;
@@ -210,6 +223,10 @@ declare const SessionSummarySchema: z.ZodObject<{
     decisions: string[];
     failedApproaches: string[];
     problems: string[];
+    commitsCreated: string[];
+    stagedChanges: string[];
+    unstagedChanges: string[];
+    planId?: string | undefined;
     task?: string | undefined;
     nextStep?: string | undefined;
     importantContext?: string | undefined;
@@ -218,6 +235,7 @@ declare const SessionSummarySchema: z.ZodObject<{
     id: string;
     date: string;
     objective: string;
+    planId?: string | undefined;
     agent?: string | undefined;
     branch?: string | undefined;
     task?: string | undefined;
@@ -226,6 +244,9 @@ declare const SessionSummarySchema: z.ZodObject<{
     decisions?: string[] | undefined;
     failedApproaches?: string[] | undefined;
     problems?: string[] | undefined;
+    commitsCreated?: string[] | undefined;
+    stagedChanges?: string[] | undefined;
+    unstagedChanges?: string[] | undefined;
     nextStep?: string | undefined;
     importantContext?: string | undefined;
     gitCommit?: string | undefined;
@@ -270,6 +291,9 @@ declare const HandoverSchema: z.ZodObject<{
     remaining: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
     modifiedFiles: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
     uncommittedChanges: z.ZodDefault<z.ZodBoolean>;
+    planId: z.ZodOptional<z.ZodString>;
+    planStep: z.ZodOptional<z.ZodString>;
+    commits: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
     decisions: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
     problems: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
     failedApproaches: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
@@ -298,6 +322,7 @@ declare const HandoverSchema: z.ZodObject<{
     id: string;
     progress: number;
     remaining: string[];
+    commits: string[];
     date: string;
     author: string;
     branch: string;
@@ -314,8 +339,10 @@ declare const HandoverSchema: z.ZodObject<{
         file?: string | undefined;
         focus?: string | undefined;
     };
+    planId?: string | undefined;
     commit?: string | undefined;
     currentTask?: string | undefined;
+    planStep?: string | undefined;
 }, {
     id: string;
     date: string;
@@ -331,6 +358,8 @@ declare const HandoverSchema: z.ZodObject<{
     completed?: string[] | undefined;
     progress?: number | undefined;
     remaining?: string[] | undefined;
+    planId?: string | undefined;
+    commits?: string[] | undefined;
     author?: string | undefined;
     decisions?: string[] | undefined;
     failedApproaches?: string[] | undefined;
@@ -339,6 +368,7 @@ declare const HandoverSchema: z.ZodObject<{
     currentTask?: string | undefined;
     modifiedFiles?: string[] | undefined;
     uncommittedChanges?: boolean | undefined;
+    planStep?: string | undefined;
 }>;
 type Handover = z.infer<typeof HandoverSchema>;
 
@@ -446,12 +476,191 @@ declare const ContinuityStateSchema: z.ZodObject<{
 }>;
 type ContinuityState = z.infer<typeof ContinuityStateSchema>;
 
+declare const PlanStatusSchema: z.ZodEnum<["planned", "active", "blocked", "completed", "abandoned"]>;
+type PlanStatus = z.infer<typeof PlanStatusSchema>;
+declare const PlanStepSchema: z.ZodObject<{
+    id: z.ZodString;
+    description: z.ZodString;
+    status: z.ZodDefault<z.ZodEnum<["pending", "in_progress", "completed", "blocked"]>>;
+    commits: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
+    files: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
+}, "strip", z.ZodTypeAny, {
+    status: "completed" | "blocked" | "pending" | "in_progress";
+    files: string[];
+    id: string;
+    description: string;
+    commits: string[];
+}, {
+    id: string;
+    description: string;
+    status?: "completed" | "blocked" | "pending" | "in_progress" | undefined;
+    files?: string[] | undefined;
+    commits?: string[] | undefined;
+}>;
+type PlanStep = z.infer<typeof PlanStepSchema>;
+declare const AcceptanceCriterionSchema: z.ZodObject<{
+    id: z.ZodString;
+    description: z.ZodString;
+    satisfied: z.ZodDefault<z.ZodBoolean>;
+}, "strip", z.ZodTypeAny, {
+    id: string;
+    description: string;
+    satisfied: boolean;
+}, {
+    id: string;
+    description: string;
+    satisfied?: boolean | undefined;
+}>;
+type AcceptanceCriterion = z.infer<typeof AcceptanceCriterionSchema>;
+declare const PlanSchema: z.ZodObject<{
+    id: z.ZodString;
+    title: z.ZodString;
+    status: z.ZodDefault<z.ZodEnum<["planned", "active", "blocked", "completed", "abandoned"]>>;
+    goal: z.ZodString;
+    scope: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
+    steps: z.ZodDefault<z.ZodArray<z.ZodObject<{
+        id: z.ZodString;
+        description: z.ZodString;
+        status: z.ZodDefault<z.ZodEnum<["pending", "in_progress", "completed", "blocked"]>>;
+        commits: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
+        files: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
+    }, "strip", z.ZodTypeAny, {
+        status: "completed" | "blocked" | "pending" | "in_progress";
+        files: string[];
+        id: string;
+        description: string;
+        commits: string[];
+    }, {
+        id: string;
+        description: string;
+        status?: "completed" | "blocked" | "pending" | "in_progress" | undefined;
+        files?: string[] | undefined;
+        commits?: string[] | undefined;
+    }>, "many">>;
+    constraints: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
+    dependencies: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
+    acceptanceCriteria: z.ZodDefault<z.ZodArray<z.ZodObject<{
+        id: z.ZodString;
+        description: z.ZodString;
+        satisfied: z.ZodDefault<z.ZodBoolean>;
+    }, "strip", z.ZodTypeAny, {
+        id: string;
+        description: string;
+        satisfied: boolean;
+    }, {
+        id: string;
+        description: string;
+        satisfied?: boolean | undefined;
+    }>, "many">>;
+    currentStep: z.ZodOptional<z.ZodString>;
+    nextStep: z.ZodOptional<z.ZodString>;
+    createdAt: z.ZodString;
+    updatedAt: z.ZodString;
+    completedAt: z.ZodOptional<z.ZodString>;
+    abandonReason: z.ZodOptional<z.ZodString>;
+}, "strip", z.ZodTypeAny, {
+    status: "active" | "completed" | "blocked" | "planned" | "abandoned";
+    id: string;
+    title: string;
+    acceptanceCriteria: {
+        id: string;
+        description: string;
+        satisfied: boolean;
+    }[];
+    createdAt: string;
+    updatedAt: string;
+    constraints: string[];
+    goal: string;
+    scope: string[];
+    steps: {
+        status: "completed" | "blocked" | "pending" | "in_progress";
+        files: string[];
+        id: string;
+        description: string;
+        commits: string[];
+    }[];
+    dependencies: string[];
+    completedAt?: string | undefined;
+    nextStep?: string | undefined;
+    currentStep?: string | undefined;
+    abandonReason?: string | undefined;
+}, {
+    id: string;
+    title: string;
+    createdAt: string;
+    updatedAt: string;
+    goal: string;
+    status?: "active" | "completed" | "blocked" | "planned" | "abandoned" | undefined;
+    acceptanceCriteria?: {
+        id: string;
+        description: string;
+        satisfied?: boolean | undefined;
+    }[] | undefined;
+    completedAt?: string | undefined;
+    nextStep?: string | undefined;
+    constraints?: string[] | undefined;
+    scope?: string[] | undefined;
+    steps?: {
+        id: string;
+        description: string;
+        status?: "completed" | "blocked" | "pending" | "in_progress" | undefined;
+        files?: string[] | undefined;
+        commits?: string[] | undefined;
+    }[] | undefined;
+    dependencies?: string[] | undefined;
+    currentStep?: string | undefined;
+    abandonReason?: string | undefined;
+}>;
+type Plan = z.infer<typeof PlanSchema>;
+
+type ContextTier = 'HIGH' | 'MEDIUM' | 'FILTERED';
+type ContextSourceType = 'code' | 'git' | 'state' | 'plan' | 'session' | 'decision' | 'failure';
+interface ContextItem {
+    id: string;
+    source: ContextSourceType;
+    title: string;
+    summary: string;
+    content: string;
+    files: string[];
+    commits: string[];
+    date?: string;
+    score: number;
+    tier: ContextTier;
+    reasons: string[];
+}
+interface RankedContextPayload {
+    task: string;
+    branch: string;
+    commit?: string;
+    highPriority: ContextItem[];
+    mediumPriority: ContextItem[];
+    totalScore: number;
+    tokenEstimate: number;
+}
+
+type EntityType = 'plan' | 'task' | 'commit' | 'file' | 'session' | 'decision' | 'failure';
+interface EntityRelationship {
+    sourceId: string;
+    sourceType: EntityType;
+    targetId: string;
+    targetType: EntityType;
+    relation: string;
+    createdAt?: string;
+}
+interface GraphNode {
+    id: string;
+    type: EntityType;
+    title: string;
+    metadata?: Record<string, any>;
+}
+
 interface GitCommitInfo {
     hash: string;
     shortHash: string;
     message: string;
     author: string;
     date: string;
+    filesChanged?: string[];
 }
 interface GitStatusInfo {
     isGitRepo: boolean;
@@ -461,6 +670,34 @@ interface GitStatusInfo {
     stagedFiles: string[];
     untrackedFiles: string[];
     hasUncommittedChanges: boolean;
+    stats?: {
+        filesChanged: number;
+        insertions: number;
+        deletions: number;
+    };
+}
+interface GitTagInfo {
+    name: string;
+    commit: string;
+    date: string;
+    message?: string;
+}
+interface GitBlameLine {
+    lineNum: number;
+    commit: string;
+    author: string;
+    date: string;
+    content: string;
+}
+interface ModuleEvolution {
+    modulePath: string;
+    totalCommits: number;
+    releases: Array<{
+        tag: string;
+        date: string;
+        commits: GitCommitInfo[];
+    }>;
+    recentCommits: GitCommitInfo[];
 }
 declare class GitClient {
     private readonly cwd;
@@ -470,13 +707,19 @@ declare class GitClient {
     getCurrentBranch(): Promise<string>;
     getLatestCommit(): Promise<GitCommitInfo | undefined>;
     getStatus(): Promise<GitStatusInfo>;
+    getRecentCommits(limit?: number, filterPath?: string): Promise<GitCommitInfo[]>;
+    getFileCommits(filePath: string, limit?: number): Promise<GitCommitInfo[]>;
+    searchSymbolHistory(symbol: string, filterPath?: string, limit?: number): Promise<GitCommitInfo[]>;
+    searchRegexHistory(regexPattern: string, filterPath?: string, limit?: number): Promise<GitCommitInfo[]>;
+    getFileBlame(filePath: string, lineStart?: number, lineEnd?: number): Promise<GitBlameLine[]>;
+    getCommitDetails(hash: string): Promise<{
+        info: GitCommitInfo;
+        stat: string;
+    } | undefined>;
+    getTags(): Promise<GitTagInfo[]>;
+    getModuleEvolution(modulePath: string): Promise<ModuleEvolution>;
     getDiff(cached?: boolean): Promise<string>;
-    getChangedFilesSince(commitHash?: string): Promise<string[]>;
-    getFileCommits(filePath: string, limit?: number): Promise<Array<{
-        hash: string;
-        message: string;
-        date: string;
-    }>>;
+    getContextDiff(files?: string[], limitLines?: number): Promise<string>;
 }
 
 interface RedactionResult {
@@ -562,12 +805,19 @@ declare class SQLiteIndexer {
     private db;
     private isNodeSqliteAvailable;
     private inMemoryFallbackDocs;
+    private inMemoryFallbackRels;
     constructor(fs: FileSystem);
     init(): Promise<void>;
     private setupTables;
     determineType(relativePath: string): string;
     extractTitle(content: string, fallback: string): string;
     indexFile(filePath: string): Promise<void>;
+    recordRelationship(rel: EntityRelationship): void;
+    getRelatedEntities(entityId: string, entityType: EntityType): Array<{
+        id: string;
+        type: EntityType;
+        relation: string;
+    }>;
     reindexAll(): Promise<number>;
     search(query: string, options?: {
         type?: string;
@@ -583,6 +833,7 @@ declare class StateManager {
     getState(): Promise<ContinuityState>;
     saveState(state: Partial<ContinuityState>): Promise<ContinuityState>;
     getProjectInfo(): Promise<ProjectInfo>;
+    saveProjectInfo(info: Partial<ProjectInfo>): Promise<ProjectInfo>;
     getArchitecture(): Promise<string>;
     private parseStateMarkdown;
     private formatStateMarkdown;
@@ -598,6 +849,8 @@ declare class TaskManager {
         description?: string;
         remaining?: string[];
         relatedFiles?: string[];
+        planId?: string;
+        acceptanceCriteria?: string[];
     }): Promise<TaskItem>;
     updateTask(id: string, updates: {
         progress?: number;
@@ -677,6 +930,9 @@ declare class SessionManager {
         decisions?: string[];
         failedApproaches?: string[];
         problems?: string[];
+        commitsCreated?: string[];
+        stagedChanges?: string[];
+        unstagedChanges?: string[];
         nextStep?: string;
         importantContext?: string;
         gitCommit?: string;
@@ -704,12 +960,60 @@ declare class HandoverManager {
         problems?: string[];
         decisions?: string[];
         failedApproaches?: string[];
+        planId?: string;
+        planStep?: string;
+        commits?: string[];
         nextAction: NextAction;
         author?: string;
     }): Promise<Handover>;
     getLatestHandover(): Promise<Handover | undefined>;
     private formatHandoverMarkdown;
     private parseHandoverMarkdown;
+}
+
+declare class PlanManager {
+    private readonly fs;
+    constructor(fs: FileSystem);
+    private get plansDir();
+    private slugify;
+    private getPlanDir;
+    createPlan(data: {
+        title: string;
+        goal: string;
+        scope?: string[];
+        steps: Array<{
+            description: string;
+            files?: string[];
+        }>;
+        constraints?: string[];
+        dependencies?: string[];
+        acceptanceCriteria?: string[];
+    }): Promise<Plan>;
+    getPlan(id: string): Promise<Plan | undefined>;
+    getActivePlan(): Promise<Plan | undefined>;
+    updatePlan(id: string, updates: {
+        status?: PlanStatus;
+        currentStep?: string;
+        completeStepIndex?: number;
+        addCommitsToStep?: {
+            stepIndex: number;
+            commits: string[];
+        };
+        satisfyCriterionIndex?: number;
+        abandonReason?: string;
+    }): Promise<Plan>;
+    completePlan(id: string): Promise<Plan>;
+    blockPlan(id: string, reason: string): Promise<Plan>;
+    abandonPlan(id: string, reason: string): Promise<Plan>;
+    listPlans(): Promise<{
+        active: Plan[];
+        blocked: Plan[];
+        completed: Plan[];
+        abandoned: Plan[];
+    }>;
+    private savePlanFile;
+    private formatPlanMarkdown;
+    private parsePlanMarkdown;
 }
 
 interface ResumeContext {
@@ -720,10 +1024,26 @@ interface ResumeContext {
     commit?: string;
     currentTask: string;
     progress: number;
+    plan?: {
+        id: string;
+        title: string;
+        status: string;
+        goal: string;
+        currentStep?: string;
+        nextStep?: string;
+        progressPercentage: number;
+        steps: Array<{
+            id: string;
+            description: string;
+            status: string;
+        }>;
+        constraints: string[];
+    };
     completed: string[];
     remaining: string[];
     currentBlocker?: string | null;
     relevantFiles: string[];
+    recentCommits: GitCommitInfo[];
     previousFailedApproaches: string[];
     recentDecisions: string[];
     lastSession?: string;
@@ -735,6 +1055,11 @@ interface ResumeContext {
         constraints: string[];
     };
     hasUncommittedChanges: boolean;
+    uncommittedStats?: {
+        filesChanged: number;
+        insertions: number;
+        deletions: number;
+    };
 }
 declare class ResumeEngine {
     private readonly stateManager;
@@ -743,7 +1068,8 @@ declare class ResumeEngine {
     private readonly failureManager;
     private readonly decisionManager;
     private readonly git;
-    constructor(stateManager: StateManager, handoverManager: HandoverManager, sessionManager: SessionManager, failureManager: FailureManager, decisionManager: DecisionManager, git: GitClient);
+    private readonly planManager?;
+    constructor(stateManager: StateManager, handoverManager: HandoverManager, sessionManager: SessionManager, failureManager: FailureManager, decisionManager: DecisionManager, git: GitClient, planManager?: PlanManager | undefined);
     buildContext(): Promise<ResumeContext>;
     formatCompact(ctx: ResumeContext): string;
     formatFullMarkdown(ctx: ResumeContext): string;
@@ -794,6 +1120,49 @@ declare class DoctorEngine {
     runDiagnostics(): Promise<DoctorReport>;
 }
 
+interface ContextCandidates {
+    task?: TaskItem;
+    plan?: Plan;
+    currentFiles: string[];
+    recentCommits: GitCommitInfo[];
+    sessions: SessionSummary[];
+    decisions: Decision[];
+    failures: Failure[];
+    uncommittedDiff?: string;
+    branch: string;
+    headCommit?: string;
+}
+declare class ContextRanker {
+    rank(candidates: ContextCandidates): RankedContextPayload;
+    formatPrompt(ranked: RankedContextPayload, uncommittedDiff?: string): string;
+}
+
+interface VerificationReport {
+    plan?: Plan;
+    status: 'READY_FOR_HANDOVER' | 'IN_PROGRESS' | 'BLOCKED';
+    stepsTotal: number;
+    stepsCompleted: number;
+    criteriaTotal: number;
+    criteriaSatisfied: number;
+    uncommittedFilesCount: number;
+    testsPassed?: boolean;
+    testOutput?: string;
+    checks: Array<{
+        name: string;
+        passed: boolean;
+        message: string;
+        warning?: boolean;
+    }>;
+    nextRecommendedAction: string;
+}
+declare class VerificationEngine {
+    private readonly planManager;
+    private readonly git;
+    private readonly fs;
+    constructor(planManager: PlanManager, git: GitClient, fs: FileSystem);
+    verify(planId?: string, runTests?: boolean): Promise<VerificationReport>;
+}
+
 declare const DEFAULT_CONTINUITY_MD = "# Continuity Protocol\n\nThis project uses the **Continuity** persistent context and work-state system.\nContinuity is the portable, machine-readable and human-readable source of truth about the work.\n\n## Before Working (Session Start)\n1. Run `continuity resume` (or inspect `.continuity/state.md`).\n2. Read `.continuity/project.md` and `.continuity/architecture.md` to understand system boundaries.\n3. Inspect Git status: `git status` to check for any uncommitted changes or current branch.\n4. Read the **Next Action** recorded in `.continuity/state.md` and continue directly from it.\n5. Check `.continuity/failures/` to make sure you do NOT attempt previously failed approaches.\n\n## While Working\n- Respect existing architectural decisions recorded in `.continuity/decisions/`.\n- If an approach fails, record it with `continuity failure record`.\n- If you make a significant architectural or design decision, log it with `continuity decision`.\n- Update task progress as you complete checklist items: `continuity task update`.\n\n## After Completing Work (Session End)\n1. Run `continuity handover` or `continuity done` to capture:\n   - What was completed\n   - What remains\n   - Files changed\n   - Known blockers or bugs\n   - Concrete, actionable **Next Action** (file, problem, expected solution, and constraints)\n2. Save your session record: `continuity session save`.\n\nDo not make the next AI or developer ask \"What were we doing?\". Leave the project ready to continue.\n";
 declare const DEFAULT_PROJECT_MD: (projectName: string, description?: string, stack?: string[]) => string;
 declare const DEFAULT_STATE_MD: (projectName: string, branch?: string) => string;
@@ -808,4 +1177,4 @@ declare const CLAUDE_CODE_SNIPPET = "# Continuity Protocol (Claude Code)\n\nThis
 declare const WINDSURF_RULES_SNIPPET = "# Continuity Rules for Windsurf\n- On task start: Run `continuity resume` and follow Next Action.\n- Do not repeat approaches documented in `.continuity/failures/`.\n- On completion: Run `continuity handover`.\n";
 declare const CLINE_RULES_SNIPPET = "# Continuity Protocol for Cline / Roo-Code\nAlways check `.continuity/state.md` before beginning.\nResume context using `continuity resume`.\nRecord failed attempts into `.continuity/failures/`.\nGenerate handover on completion using `continuity handover`.\n";
 
-export { CLAUDE_CODE_SNIPPET, CLINE_RULES_SNIPPET, CURSOR_RULES_MDC, type ContinuityConfig, ContinuityConfigSchema, type ContinuityState, ContinuityStateSchema, DEFAULT_ARCHITECTURE_MD, DEFAULT_CONFIG_YML, DEFAULT_CONTINUITY_MD, DEFAULT_INDEX_MD, DEFAULT_PROJECT_MD, DEFAULT_ROADMAP_MD, DEFAULT_STATE_MD, type Decision, DecisionManager, DecisionSchema, type DoctorCheck, DoctorEngine, type DoctorReport, ExplainEngine, type Failure, FailureManager, FailureSchema, type FileExplanation, FileSystem, GitClient, type GitCommitInfo, type GitStatusInfo, type Handover, HandoverManager, HandoverSchema, type IndexedDocument, MarkdownHelper, type NextAction, NextActionSchema, type ParsedMarkdown, type ProjectInfo, ProjectInfoSchema, type RawSession, type RedactionResult, type ResumeContext, ResumeEngine, SQLiteIndexer, type SearchResult, SecretRedactor, SessionManager, type SessionSummary, SessionSummarySchema, StateManager, type TaskItem, TaskItemSchema, TaskManager, type TaskStatus, TaskStatusSchema, UNIVERSAL_SKILL_MD, WINDSURF_RULES_SNIPPET };
+export { type AcceptanceCriterion, AcceptanceCriterionSchema, CLAUDE_CODE_SNIPPET, CLINE_RULES_SNIPPET, CURSOR_RULES_MDC, type ContextCandidates, type ContextItem, ContextRanker, type ContextSourceType, type ContextTier, type ContinuityConfig, ContinuityConfigSchema, type ContinuityState, ContinuityStateSchema, DEFAULT_ARCHITECTURE_MD, DEFAULT_CONFIG_YML, DEFAULT_CONTINUITY_MD, DEFAULT_INDEX_MD, DEFAULT_PROJECT_MD, DEFAULT_ROADMAP_MD, DEFAULT_STATE_MD, type Decision, DecisionManager, DecisionSchema, type DoctorCheck, DoctorEngine, type DoctorReport, type EntityRelationship, type EntityType, ExplainEngine, type Failure, FailureManager, FailureSchema, type FileExplanation, FileSystem, type GitBlameLine, GitClient, type GitCommitInfo, type GitStatusInfo, type GitTagInfo, type GraphNode, type Handover, HandoverManager, HandoverSchema, type IndexedDocument, MarkdownHelper, type ModuleEvolution, type NextAction, NextActionSchema, type ParsedMarkdown, type Plan, PlanManager, PlanSchema, type PlanStatus, PlanStatusSchema, type PlanStep, PlanStepSchema, type ProjectInfo, ProjectInfoSchema, type RankedContextPayload, type RawSession, type RedactionResult, type ResumeContext, ResumeEngine, SQLiteIndexer, type SearchResult, SecretRedactor, SessionManager, type SessionSummary, SessionSummarySchema, StateManager, type TaskItem, TaskItemSchema, TaskManager, type TaskStatus, TaskStatusSchema, UNIVERSAL_SKILL_MD, VerificationEngine, type VerificationReport, WINDSURF_RULES_SNIPPET };

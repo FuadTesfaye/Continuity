@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { FileSystem } from '../storage/file-system.js';
-import { MarkdownHelper } from '../storage/markdown.js';
+import { EntityRelationship, EntityType } from '../types/graph.js';
 
 export interface SearchResult {
   path: string;
@@ -24,6 +24,7 @@ export class SQLiteIndexer {
   private db: any = null;
   private isNodeSqliteAvailable = false;
   private inMemoryFallbackDocs: Map<string, IndexedDocument> = new Map();
+  private inMemoryFallbackRels: EntityRelationship[] = [];
 
   constructor(private readonly fs: FileSystem) {}
 
@@ -33,7 +34,6 @@ export class SQLiteIndexer {
     const dbPath = path.join(cacheDir, 'index.db');
 
     try {
-      // Attempt to load node:sqlite
       const sqliteModule = await import('node:sqlite');
       if (sqliteModule && sqliteModule.DatabaseSync) {
         this.db = new sqliteModule.DatabaseSync(dbPath);
@@ -41,9 +41,7 @@ export class SQLiteIndexer {
         this.setupTables();
         return;
       }
-    } catch {
-      // node:sqlite not available or failed; fallback is active
-    }
+    } catch {}
 
     this.isNodeSqliteAvailable = false;
   }
@@ -60,6 +58,16 @@ export class SQLiteIndexer {
         content TEXT,
         modified_at INTEGER
       );
+
+      CREATE TABLE IF NOT EXISTS relationships (
+        source_id TEXT,
+        source_type TEXT,
+        target_id TEXT,
+        target_type TEXT,
+        relation TEXT,
+        created_at TEXT,
+        PRIMARY KEY (source_id, source_type, target_id, target_type, relation)
+      );
     `);
 
     try {
@@ -74,12 +82,12 @@ export class SQLiteIndexer {
         );
       `);
     } catch {
-      // In case FTS5 is not compiled in sqlite build
       this.isNodeSqliteAvailable = false;
     }
   }
 
   determineType(relativePath: string): string {
+    if (relativePath.includes('plans/')) return 'plan';
     if (relativePath.includes('decisions/')) return 'decision';
     if (relativePath.includes('tasks/')) return 'task';
     if (relativePath.includes('sessions/')) return 'session';
@@ -139,17 +147,65 @@ export class SQLiteIndexer {
         `);
         insFts.run(doc.path, doc.relativePath, doc.type, doc.title, doc.content);
         return;
-      } catch {
-        // fallback
-      }
+      } catch {}
     }
 
     this.inMemoryFallbackDocs.set(filePath, doc);
   }
 
+  recordRelationship(rel: EntityRelationship): void {
+    if (this.isNodeSqliteAvailable && this.db) {
+      try {
+        const stmt = this.db.prepare(`
+          INSERT OR REPLACE INTO relationships (source_id, source_type, target_id, target_type, relation, created_at)
+          VALUES (?, ?, ?, ?, ?, ?);
+        `);
+        stmt.run(
+          rel.sourceId,
+          rel.sourceType,
+          rel.targetId,
+          rel.targetType,
+          rel.relation,
+          rel.createdAt || new Date().toISOString()
+        );
+        return;
+      } catch {}
+    }
+
+    // Fallback
+    this.inMemoryFallbackRels.push(rel);
+  }
+
+  getRelatedEntities(
+    entityId: string,
+    entityType: EntityType
+  ): Array<{ id: string; type: EntityType; relation: string }> {
+    if (this.isNodeSqliteAvailable && this.db) {
+      try {
+        const stmt = this.db.prepare(`
+          SELECT target_id as id, target_type as type, relation FROM relationships
+          WHERE source_id = ? AND source_type = ?
+          UNION
+          SELECT source_id as id, source_type as type, relation FROM relationships
+          WHERE target_id = ? AND target_type = ?;
+        `);
+        return stmt.all(entityId, entityType, entityId, entityType);
+      } catch {}
+    }
+
+    const matches: Array<{ id: string; type: EntityType; relation: string }> = [];
+    for (const r of this.inMemoryFallbackRels) {
+      if (r.sourceId === entityId && r.sourceType === entityType) {
+        matches.push({ id: r.targetId, type: r.targetType, relation: r.relation });
+      } else if (r.targetId === entityId && r.targetType === entityType) {
+        matches.push({ id: r.sourceId, type: r.sourceType, relation: r.relation });
+      }
+    }
+    return matches;
+  }
+
   async reindexAll(): Promise<number> {
     const files = await this.fs.listFiles(this.fs.continuityDir, '.md');
-    // Also include CONTINUITY.md if present
     const continuityRootMd = this.fs.resolve('CONTINUITY.md');
     if (this.fs.exists(continuityRootMd)) {
       files.push(continuityRootMd);
@@ -157,7 +213,6 @@ export class SQLiteIndexer {
 
     let indexedCount = 0;
     for (const file of files) {
-      // Skip cache and raw sessions by default
       if (file.includes('/cache/') || file.includes('\\cache\\')) continue;
       await this.indexFile(file);
       indexedCount++;
@@ -172,7 +227,6 @@ export class SQLiteIndexer {
 
     if (this.isNodeSqliteAvailable && this.db && sanitizedQuery) {
       try {
-        // Query FTS5 using bm25 ranking
         let sql = `
           SELECT path, relative_path, type, title, snippet(documents_fts, 4, '>>>', '<<<', '...', 32) as snippet, bm25(documents_fts) as score
           FROM documents_fts
@@ -197,12 +251,9 @@ export class SQLiteIndexer {
           snippet: row.snippet || row.title,
           score: Math.abs(row.score)
         }));
-      } catch {
-        // Fall back to memory search if query throws an FTS syntax error
-      }
+      } catch {}
     }
 
-    // Fallback in-memory keyword search
     return this.fallbackSearch(sanitizedQuery, options.type, limit);
   }
 
@@ -224,7 +275,6 @@ export class SQLiteIndexer {
       }
 
       if (matchCount > 0) {
-        // Extract simple snippet
         let snippet = doc.title;
         const firstIndex = lowerContent.indexOf(terms[0]);
         if (firstIndex !== -1) {

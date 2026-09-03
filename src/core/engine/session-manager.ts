@@ -45,6 +45,9 @@ export class SessionManager {
       decisions?: string[];
       failedApproaches?: string[];
       problems?: string[];
+      commitsCreated?: string[];
+      stagedChanges?: string[];
+      unstagedChanges?: string[];
       nextStep?: string;
       importantContext?: string;
       gitCommit?: string;
@@ -79,6 +82,9 @@ export class SessionManager {
       decisions: sanitizedDecisions,
       failedApproaches: sanitizedFailures,
       problems: sanitizedProblems,
+      commitsCreated: data.commitsCreated || [],
+      stagedChanges: data.stagedChanges || [],
+      unstagedChanges: data.unstagedChanges || [],
       nextStep: sanitizedNextStep,
       importantContext: sanitizedContext,
       gitCommit: data.gitCommit
@@ -188,6 +194,9 @@ Commit: ${s.gitCommit || 'None'}
         decisions: MarkdownHelper.parseBulletList(sections.get('Decisions') || ''),
         failedApproaches: MarkdownHelper.parseBulletList(sections.get('Failed Approaches') || ''),
         problems: MarkdownHelper.parseBulletList(sections.get('Problems') || ''),
+        commitsCreated: parsed.data.commitsCreated || [],
+        stagedChanges: parsed.data.stagedChanges || [],
+        unstagedChanges: parsed.data.unstagedChanges || [],
         nextStep: sections.get('Next Step'),
         importantContext: sections.get('Important Context'),
         gitCommit: parsed.data.gitCommit || sections.get('Git')?.replace(/^Commit:\s*/i, '').trim()

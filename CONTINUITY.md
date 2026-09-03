@@ -1,28 +1,44 @@
-# Continuity Protocol
+# Continuity Protocol (v2)
 
-This project uses the **Continuity** persistent context and work-state system.
-Continuity is the portable, machine-readable and human-readable source of truth about the work.
+This project uses **Continuity**, a persistent project-context and work-state system that lets any AI or human pick up software work from where another left it.
 
-## Before Working (Session Start)
-1. Run `continuity resume` (or inspect `.continuity/state.md`).
-2. Read `.continuity/project.md` and `.continuity/architecture.md` to understand system boundaries.
-3. Inspect Git status: `git status` to check for any uncommitted changes or current branch.
-4. Read the **Next Action** recorded in `.continuity/state.md` and continue directly from it.
-5. Check `.continuity/failures/` to make sure you do NOT attempt previously failed approaches.
+Continuity reconstructs the project from **6 context sources**:
+1. **Code**: What exists right now?
+2. **Git History**: How did we get here? (recent commits, file evolution, archaeology)
+3. **Current State**: Where are we now? (`.continuity/state.md`)
+4. **Plans**: Where are we supposed to go? (`.continuity/plans/`)
+5. **Sessions**: What happened during previous AI work? (`.continuity/sessions/`)
+6. **Decisions & Failures**: Why was it built this way and what must never be repeated? (`.continuity/decisions/`, `.continuity/failures/`)
 
-## While Working
-- Respect existing architectural decisions recorded in `.continuity/decisions/`.
-- If an approach fails, record it with `continuity failure record`.
-- If you make a significant architectural or design decision, log it with `continuity decision`.
-- Update task progress as you complete checklist items: `continuity task update`.
+---
 
-## After Completing Work (Session End)
-1. Run `continuity handover` or `continuity done` to capture:
-   - What was completed
-   - What remains
-   - Files changed
-   - Known blockers or bugs
-   - Concrete, actionable **Next Action** (file, problem, expected solution, and constraints)
-2. Save your session record: `continuity session save`.
+## 1. Before Working (Session Start)
+1. Run `continuity resume` to receive the unified 6-source continuation package.
+2. Check the active plan: `continuity plan list` or `continuity plan show <id>`.
+3. Inspect Git context: `continuity git` (Level 1 state + Level 2 recent commits).
+4. For questions about why a file/module exists, run: `continuity history <file>` or `continuity history <file> --symbol <fn>`.
+5. Check `.continuity/failures/` to ensure you **DO NOT REPEAT** previously failed approaches.
+6. Check `.continuity/decisions/` to adhere to accepted Architecture Decision Records (ADRs).
 
-Do not make the next AI or developer ask "What were we doing?". Leave the project ready to continue.
+## 2. While Working
+- Work according to the **Current Step** in `.continuity/plans/active/`.
+- Update plan steps as they are completed: `continuity plan update <id> --complete-step <n>`.
+- Update task progress: `continuity task update --progress <pct>`.
+- If an approach fails, document it: `continuity failure record "<title>" --why "..." --do-not-repeat "..." --better "..."`.
+- If you make a permanent architectural decision, log it: `continuity decision "<title>" --decision "..." --why "..."`.
+
+## 3. After Completing Work (Session End)
+1. Verify work completeness against the active plan and criteria:
+   ```bash
+   continuity verify
+   ```
+2. Commit your code changes to Git (`git add`, `git commit`).
+3. Package the continuation state with:
+   ```bash
+   continuity handover
+   # or
+   continuity done --summary "Completed payment retry refactor"
+   ```
+4. Record your session summary: `continuity session save`.
+
+**Fundamental Promise**: Every completed task must leave the project in a state where a different AI can continue immediately without asking the previous AI what happened.

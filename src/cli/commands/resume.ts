@@ -5,6 +5,7 @@ import { HandoverManager } from '../../core/engine/handover-manager.js';
 import { SessionManager } from '../../core/engine/session-manager.js';
 import { FailureManager } from '../../core/engine/failure-manager.js';
 import { DecisionManager } from '../../core/engine/decision-manager.js';
+import { PlanManager } from '../../core/engine/plan-manager.js';
 import { ResumeEngine } from '../../core/engine/resume-engine.js';
 import { TerminalFormatter } from '../formatters/terminal.js';
 
@@ -28,6 +29,7 @@ export async function runResume(options: ResumeOptions = {}): Promise<void> {
   const failureManager = new FailureManager(fs);
   const handoverManager = new HandoverManager(fs, git, stateManager, decisionManager, failureManager);
   const sessionManager = new SessionManager(fs, stateManager);
+  const planManager = new PlanManager(fs);
 
   const resumeEngine = new ResumeEngine(
     stateManager,
@@ -35,7 +37,8 @@ export async function runResume(options: ResumeOptions = {}): Promise<void> {
     sessionManager,
     failureManager,
     decisionManager,
-    git
+    git,
+    planManager
   );
 
   const context = await resumeEngine.buildContext();

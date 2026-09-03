@@ -31,14 +31,16 @@ export async function runHandover(options: HandoverOptions = {}): Promise<void> 
   const stateManager = new StateManager(fs);
   const decisionManager = new DecisionManager(fs);
   const failureManager = new FailureManager(fs);
+  const planManager = new PlanManager(fs);
   const handoverManager = new HandoverManager(fs, git, stateManager, decisionManager, failureManager);
 
   const currentState = await stateManager.getState();
+  const activePlan = await planManager.getActivePlan();
 
-  const progress = options.progress !== undefined ? parseInt(options.progress, 10) : undefined;
-  const completed = options.completed ? options.completed.split(',').map((s) => s.trim()) : undefined;
-  const remaining = options.remaining ? options.remaining.split(',').map((s) => s.trim()) : undefined;
-  const constraints = options.constraints ? options.constraints.split(',').map((s) => s.trim()) : [];
+  const progress = options.progress !== undefined ? parseInt(options.progress, 10) : activePlan ? Math.round((activePlan.steps.filter(s => s.status === 'completed').length / Math.max(1, activePlan.steps.length)) * 100) : undefined;
+  const completed = options.completed ? options.completed.split(',').map((s) => s.trim()) : activePlan ? activePlan.steps.filter(s => s.status === 'completed').map(s => s.description) : undefined;
+  const remaining = options.remaining ? options.remaining.split(',').map((s) => s.trim()) : activePlan ? activePlan.steps.filter(s => s.status !== 'completed').map(s => s.description) : undefined;
+  const constraints = options.constraints ? options.constraints.split(',').map((s) => s.trim()) : activePlan ? activePlan.constraints : [];
 
   const nextAction = {
     file: options.file,

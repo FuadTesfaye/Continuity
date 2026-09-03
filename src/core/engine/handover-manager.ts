@@ -33,6 +33,9 @@ export class HandoverManager {
     problems?: string[];
     decisions?: string[];
     failedApproaches?: string[];
+    planId?: string;
+    planStep?: string;
+    commits?: string[];
     nextAction: NextAction;
     author?: string;
   }): Promise<Handover> {
@@ -101,6 +104,9 @@ export class HandoverManager {
       remaining: data.remaining || currentState.remaining,
       modifiedFiles,
       uncommittedChanges: gitStatus.hasUncommittedChanges,
+      planId: data.planId,
+      planStep: data.planStep,
+      commits: data.commits || (gitStatus.commit ? [gitStatus.commit.shortHash] : []),
       decisions,
       problems: data.problems || (currentState.currentBlocker ? [currentState.currentBlocker] : []),
       failedApproaches,
@@ -222,6 +228,9 @@ ${nextActionLines.join('\n\n')}
         remaining: MarkdownHelper.parseBulletList(sections.get('Remaining') || ''),
         modifiedFiles: MarkdownHelper.parseBulletList(sections.get('Modified Files') || ''),
         uncommittedChanges: false,
+        planId: parsed.data.planId,
+        planStep: parsed.data.planStep,
+        commits: parsed.data.commits || (parsed.data.commit ? [parsed.data.commit] : []),
         decisions: MarkdownHelper.parseBulletList(sections.get('Important Decisions') || ''),
         problems: MarkdownHelper.parseBulletList(sections.get('Known Problems & Blockers') || ''),
         failedApproaches: MarkdownHelper.parseBulletList(sections.get('Failed Approaches (Do Not Repeat)') || ''),

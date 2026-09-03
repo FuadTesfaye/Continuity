@@ -156,6 +156,18 @@ var GitClient = class {
       }
     }
     const hasUncommittedChanges = modifiedFiles.length > 0 || stagedFiles.length > 0 || untrackedFiles.length > 0;
+    let stats;
+    const diffStat = await this.runGit(["diff", "--shortstat"]);
+    if (diffStat) {
+      const filesMatch = diffStat.match(/(\d+)\s+file/);
+      const insMatch = diffStat.match(/(\d+)\s+insertion/);
+      const delMatch = diffStat.match(/(\d+)\s+deletion/);
+      stats = {
+        filesChanged: filesMatch ? parseInt(filesMatch[1], 10) : 0,
+        insertions: insMatch ? parseInt(insMatch[1], 10) : 0,
+        deletions: delMatch ? parseInt(delMatch[1], 10) : 0
+      };
+    }
     return {
       isGitRepo: true,
       branch,
@@ -163,37 +175,237 @@ var GitClient = class {
       modifiedFiles: Array.from(new Set(modifiedFiles)),
       stagedFiles: Array.from(new Set(stagedFiles)),
       untrackedFiles: Array.from(new Set(untrackedFiles)),
-      hasUncommittedChanges
+      hasUncommittedChanges,
+      stats
     };
   }
+  // Level 2: Recent History
+  async getRecentCommits(limit = 15, filterPath) {
+    const args = [
+      "log",
+      `-${limit}`,
+      "--pretty=format:%H%x1f%h%x1f%s%x1f%an%x1f%ad",
+      "--date=short"
+    ];
+    if (filterPath) {
+      args.push("--", filterPath);
+    }
+    const output = await this.runGit(args);
+    if (!output) return [];
+    const commits = [];
+    for (const line of output.split("\n")) {
+      if (!line.trim()) continue;
+      const parts = line.split("");
+      if (parts.length >= 5) {
+        commits.push({
+          hash: parts[0],
+          shortHash: parts[1],
+          message: parts[2],
+          author: parts[3],
+          date: parts[4]
+        });
+      }
+    }
+    return commits;
+  }
+  // Level 3: File Temporal History
+  async getFileCommits(filePath, limit = 10) {
+    return this.getRecentCommits(limit, filePath);
+  }
+  // Level 4: Change Archaeology (Pickaxe -S)
+  async searchSymbolHistory(symbol, filterPath, limit = 10) {
+    const args = [
+      "log",
+      `-${limit}`,
+      `-S${symbol}`,
+      "--pretty=format:%H%x1f%h%x1f%s%x1f%an%x1f%ad",
+      "--date=short"
+    ];
+    if (filterPath) {
+      args.push("--", filterPath);
+    }
+    const output = await this.runGit(args);
+    if (!output) return [];
+    return output.split("\n").map((line) => {
+      const parts = line.split("");
+      if (parts.length < 5) return null;
+      return {
+        hash: parts[0],
+        shortHash: parts[1],
+        message: parts[2],
+        author: parts[3],
+        date: parts[4]
+      };
+    }).filter((c) => c !== null);
+  }
+  // Level 4: Change Archaeology (Regex -G)
+  async searchRegexHistory(regexPattern, filterPath, limit = 10) {
+    const args = [
+      "log",
+      `-${limit}`,
+      `-G${regexPattern}`,
+      "--pretty=format:%H%x1f%h%x1f%s%x1f%an%x1f%ad",
+      "--date=short"
+    ];
+    if (filterPath) {
+      args.push("--", filterPath);
+    }
+    const output = await this.runGit(args);
+    if (!output) return [];
+    return output.split("\n").map((line) => {
+      const parts = line.split("");
+      if (parts.length < 5) return null;
+      return {
+        hash: parts[0],
+        shortHash: parts[1],
+        message: parts[2],
+        author: parts[3],
+        date: parts[4]
+      };
+    }).filter((c) => c !== null);
+  }
+  // Level 4: Blame
+  async getFileBlame(filePath, lineStart, lineEnd) {
+    const args = ["blame", "--porcelain"];
+    if (lineStart !== void 0 && lineEnd !== void 0) {
+      args.push(`-L${lineStart},${lineEnd}`);
+    }
+    args.push("--", filePath);
+    const output = await this.runGit(args);
+    if (!output) return [];
+    const lines = output.split("\n");
+    const result = [];
+    let currentCommit = "";
+    let currentAuthor = "";
+    let currentDate = "";
+    let lineNum = 1;
+    for (const line of lines) {
+      if (line.match(/^[a-f0-9]{40}/)) {
+        currentCommit = line.split(" ")[0].substring(0, 7);
+      } else if (line.startsWith("author ")) {
+        currentAuthor = line.replace(/^author\s+/, "");
+      } else if (line.startsWith("author-time ")) {
+        const timestamp = parseInt(line.replace(/^author-time\s+/, ""), 10);
+        currentDate = new Date(timestamp * 1e3).toISOString().split("T")[0];
+      } else if (line.startsWith("	")) {
+        result.push({
+          lineNum: lineNum++,
+          commit: currentCommit,
+          author: currentAuthor,
+          date: currentDate,
+          content: line.substring(1)
+        });
+      }
+    }
+    return result;
+  }
+  // Commit Details
+  async getCommitDetails(hash) {
+    const output = await this.runGit([
+      "show",
+      hash,
+      "--stat",
+      "--pretty=format:%H%x1f%h%x1f%s%x1f%an%x1f%ad"
+    ]);
+    if (!output) return void 0;
+    const splitIndex = output.indexOf("\n");
+    const header = splitIndex !== -1 ? output.substring(0, splitIndex) : output;
+    const stat = splitIndex !== -1 ? output.substring(splitIndex + 1).trim() : "";
+    const parts = header.split("");
+    if (parts.length < 5) return void 0;
+    return {
+      info: {
+        hash: parts[0],
+        shortHash: parts[1],
+        message: parts[2],
+        author: parts[3],
+        date: parts[4]
+      },
+      stat
+    };
+  }
+  // Tags & Releases
+  async getTags() {
+    const output = await this.runGit([
+      "tag",
+      "-l",
+      "--sort=-creatordate",
+      "--format=%(refname:short)%09%(objectname:short)%09%(creatordate:short)%09%(contents:subject)"
+    ]);
+    if (!output) return [];
+    return output.split("\n").filter((l) => l.trim()).map((line) => {
+      const parts = line.split("	");
+      return {
+        name: parts[0],
+        commit: parts[1],
+        date: parts[2],
+        message: parts[3]
+      };
+    });
+  }
+  // Module Evolution across tags and commits
+  async getModuleEvolution(modulePath) {
+    const recentCommits = await this.getRecentCommits(30, modulePath);
+    const tags = await this.getTags();
+    const releases = [];
+    for (const tag of tags.slice(0, 5)) {
+      const tagCommits = await this.runGit([
+        "log",
+        "-5",
+        "--pretty=format:%H%x1f%h%x1f%s%x1f%an%x1f%ad",
+        "--date=short",
+        tag.name,
+        "--",
+        modulePath
+      ]);
+      if (tagCommits) {
+        const parsedCommits = tagCommits.split("\n").filter(Boolean).map((l) => {
+          const parts = l.split("");
+          return {
+            hash: parts[0],
+            shortHash: parts[1],
+            message: parts[2],
+            author: parts[3],
+            date: parts[4]
+          };
+        });
+        if (parsedCommits.length > 0) {
+          releases.push({
+            tag: tag.name,
+            date: tag.date,
+            commits: parsedCommits
+          });
+        }
+      }
+    }
+    return {
+      modulePath,
+      totalCommits: recentCommits.length,
+      releases,
+      recentCommits: recentCommits.slice(0, 10)
+    };
+  }
+  // Diff
   async getDiff(cached = false) {
     const args = ["diff"];
     if (cached) args.push("--cached");
     return this.runGit(args);
   }
-  async getChangedFilesSince(commitHash) {
-    if (!commitHash) {
-      const status = await this.getStatus();
-      return [...status.modifiedFiles, ...status.stagedFiles];
+  async getContextDiff(files, limitLines = 50) {
+    const args = ["diff", "--stat"];
+    if (files && files.length > 0) {
+      args.push("--", ...files);
     }
-    const output = await this.runGit(["diff", "--name-only", `${commitHash}..HEAD`]);
-    if (!output) return [];
-    return output.split("\n").map((f) => f.trim()).filter(Boolean);
-  }
-  async getFileCommits(filePath, limit = 5) {
-    const output = await this.runGit([
-      "log",
-      `-${limit}`,
-      "--pretty=format:%h%x1f%s%x1f%ad",
-      "--date=short",
-      "--",
-      filePath
-    ]);
-    if (!output) return [];
-    return output.split("\n").map((line) => {
-      const [hash, message, date] = line.split("");
-      return { hash, message, date };
-    }).filter((c) => Boolean(c.hash));
+    const stat = await this.runGit(args);
+    const diffArgs = ["diff", "-U2"];
+    if (files && files.length > 0) {
+      diffArgs.push("--", ...files);
+    }
+    const diff = await this.runGit(diffArgs);
+    const diffLines = diff.split("\n").slice(0, limitLines).join("\n");
+    return `${stat}
+
+${diffLines}`;
   }
 };
 
@@ -207,6 +419,7 @@ var SQLiteIndexer = class {
   db = null;
   isNodeSqliteAvailable = false;
   inMemoryFallbackDocs = /* @__PURE__ */ new Map();
+  inMemoryFallbackRels = [];
   async init() {
     const cacheDir = this.fs.resolveContinuity("cache");
     await this.fs.ensureDir(cacheDir);
@@ -234,6 +447,16 @@ var SQLiteIndexer = class {
         content TEXT,
         modified_at INTEGER
       );
+
+      CREATE TABLE IF NOT EXISTS relationships (
+        source_id TEXT,
+        source_type TEXT,
+        target_id TEXT,
+        target_type TEXT,
+        relation TEXT,
+        created_at TEXT,
+        PRIMARY KEY (source_id, source_type, target_id, target_type, relation)
+      );
     `);
     try {
       this.db.exec(`
@@ -251,6 +474,7 @@ var SQLiteIndexer = class {
     }
   }
   determineType(relativePath) {
+    if (relativePath.includes("plans/")) return "plan";
     if (relativePath.includes("decisions/")) return "decision";
     if (relativePath.includes("tasks/")) return "task";
     if (relativePath.includes("sessions/")) return "session";
@@ -309,6 +533,51 @@ var SQLiteIndexer = class {
       }
     }
     this.inMemoryFallbackDocs.set(filePath, doc);
+  }
+  recordRelationship(rel) {
+    if (this.isNodeSqliteAvailable && this.db) {
+      try {
+        const stmt = this.db.prepare(`
+          INSERT OR REPLACE INTO relationships (source_id, source_type, target_id, target_type, relation, created_at)
+          VALUES (?, ?, ?, ?, ?, ?);
+        `);
+        stmt.run(
+          rel.sourceId,
+          rel.sourceType,
+          rel.targetId,
+          rel.targetType,
+          rel.relation,
+          rel.createdAt || (/* @__PURE__ */ new Date()).toISOString()
+        );
+        return;
+      } catch {
+      }
+    }
+    this.inMemoryFallbackRels.push(rel);
+  }
+  getRelatedEntities(entityId, entityType) {
+    if (this.isNodeSqliteAvailable && this.db) {
+      try {
+        const stmt = this.db.prepare(`
+          SELECT target_id as id, target_type as type, relation FROM relationships
+          WHERE source_id = ? AND source_type = ?
+          UNION
+          SELECT source_id as id, source_type as type, relation FROM relationships
+          WHERE target_id = ? AND target_type = ?;
+        `);
+        return stmt.all(entityId, entityType, entityId, entityType);
+      } catch {
+      }
+    }
+    const matches = [];
+    for (const r of this.inMemoryFallbackRels) {
+      if (r.sourceId === entityId && r.sourceType === entityType) {
+        matches.push({ id: r.targetId, type: r.targetType, relation: r.relation });
+      } else if (r.targetId === entityId && r.targetType === entityType) {
+        matches.push({ id: r.sourceId, type: r.sourceType, relation: r.relation });
+      }
+    }
+    return matches;
   }
   async reindexAll() {
     const files = await this.fs.listFiles(this.fs.continuityDir, ".md");
@@ -818,6 +1087,9 @@ var HandoverSchema = z.object({
   remaining: z.array(z.string()).default([]),
   modifiedFiles: z.array(z.string()).default([]),
   uncommittedChanges: z.boolean().default(false),
+  planId: z.string().optional(),
+  planStep: z.string().optional(),
+  commits: z.array(z.string()).default([]),
   decisions: z.array(z.string()).default([]),
   problems: z.array(z.string()).default([]),
   failedApproaches: z.array(z.string()).default([]),
@@ -1016,6 +1288,39 @@ var StateManager = class {
       infrastructure,
       repository
     };
+  }
+  async saveProjectInfo(info) {
+    const current = await this.getProjectInfo();
+    const merged = {
+      ...current,
+      ...info
+    };
+    const content = `# Project Overview
+
+## Name
+${merged.name}
+
+## Purpose
+${merged.purpose || "Not specified"}
+
+## Stack
+${MarkdownHelper.formatBulletList(merged.stack)}
+
+## Architecture
+${merged.architecture || "Not specified"}
+
+## Database
+${merged.database || "Not specified"}
+
+## Infrastructure
+${MarkdownHelper.formatBulletList(merged.infrastructure)}
+
+${merged.repository ? `## Repository
+${merged.repository}
+` : ""}
+`;
+    await this.fs.writeFile(this.fs.resolveContinuity("project.md"), content);
+    return merged;
   }
   async getArchitecture() {
     const archPath = this.fs.resolveContinuity("architecture.md");
@@ -1378,6 +1683,9 @@ var HandoverManager = class {
       remaining: data.remaining || currentState.remaining,
       modifiedFiles,
       uncommittedChanges: gitStatus.hasUncommittedChanges,
+      planId: data.planId,
+      planStep: data.planStep,
+      commits: data.commits || (gitStatus.commit ? [gitStatus.commit.shortHash] : []),
       decisions,
       problems: data.problems || (currentState.currentBlocker ? [currentState.currentBlocker] : []),
       failedApproaches,
@@ -1490,6 +1798,9 @@ ${nextActionLines.join("\n\n")}
         remaining: MarkdownHelper.parseBulletList(sections.get("Remaining") || ""),
         modifiedFiles: MarkdownHelper.parseBulletList(sections.get("Modified Files") || ""),
         uncommittedChanges: false,
+        planId: parsed.data.planId,
+        planStep: parsed.data.planStep,
+        commits: parsed.data.commits || (parsed.data.commit ? [parsed.data.commit] : []),
         decisions: MarkdownHelper.parseBulletList(sections.get("Important Decisions") || ""),
         problems: MarkdownHelper.parseBulletList(sections.get("Known Problems & Blockers") || ""),
         failedApproaches: MarkdownHelper.parseBulletList(sections.get("Failed Approaches (Do Not Repeat)") || ""),
@@ -1525,6 +1836,10 @@ var SessionSummarySchema = z3.object({
   decisions: z3.array(z3.string()).default([]),
   failedApproaches: z3.array(z3.string()).default([]),
   problems: z3.array(z3.string()).default([]),
+  planId: z3.string().optional(),
+  commitsCreated: z3.array(z3.string()).default([]),
+  stagedChanges: z3.array(z3.string()).default([]),
+  unstagedChanges: z3.array(z3.string()).default([]),
   nextStep: z3.string().optional(),
   importantContext: z3.string().optional(),
   gitCommit: z3.string().optional()
@@ -1582,6 +1897,9 @@ var SessionManager = class {
       decisions: sanitizedDecisions,
       failedApproaches: sanitizedFailures,
       problems: sanitizedProblems,
+      commitsCreated: data.commitsCreated || [],
+      stagedChanges: data.stagedChanges || [],
+      unstagedChanges: data.unstagedChanges || [],
       nextStep: sanitizedNextStep,
       importantContext: sanitizedContext,
       gitCommit: data.gitCommit
@@ -1675,6 +1993,9 @@ Commit: ${s.gitCommit || "None"}
         decisions: MarkdownHelper.parseBulletList(sections.get("Decisions") || ""),
         failedApproaches: MarkdownHelper.parseBulletList(sections.get("Failed Approaches") || ""),
         problems: MarkdownHelper.parseBulletList(sections.get("Problems") || ""),
+        commitsCreated: parsed.data.commitsCreated || [],
+        stagedChanges: parsed.data.stagedChanges || [],
+        unstagedChanges: parsed.data.unstagedChanges || [],
         nextStep: sections.get("Next Step"),
         importantContext: sections.get("Important Context"),
         gitCommit: parsed.data.gitCommit || sections.get("Git")?.replace(/^Commit:\s*/i, "").trim()
@@ -1939,15 +2260,351 @@ ${d.date}
   }
 };
 
+// src/core/engine/plan-manager.ts
+import path8 from "path";
+
+// src/core/types/plan.ts
+import { z as z6 } from "zod";
+var PlanStatusSchema = z6.enum(["planned", "active", "blocked", "completed", "abandoned"]);
+var PlanStepSchema = z6.object({
+  id: z6.string(),
+  description: z6.string(),
+  status: z6.enum(["pending", "in_progress", "completed", "blocked"]).default("pending"),
+  commits: z6.array(z6.string()).default([]),
+  files: z6.array(z6.string()).default([])
+});
+var AcceptanceCriterionSchema = z6.object({
+  id: z6.string(),
+  description: z6.string(),
+  satisfied: z6.boolean().default(false)
+});
+var PlanSchema = z6.object({
+  id: z6.string(),
+  title: z6.string(),
+  status: PlanStatusSchema.default("active"),
+  goal: z6.string(),
+  scope: z6.array(z6.string()).default([]),
+  steps: z6.array(PlanStepSchema).default([]),
+  constraints: z6.array(z6.string()).default([]),
+  dependencies: z6.array(z6.string()).default([]),
+  acceptanceCriteria: z6.array(AcceptanceCriterionSchema).default([]),
+  currentStep: z6.string().optional(),
+  nextStep: z6.string().optional(),
+  createdAt: z6.string(),
+  updatedAt: z6.string(),
+  completedAt: z6.string().optional(),
+  abandonReason: z6.string().optional()
+});
+
+// src/core/engine/plan-manager.ts
+var PlanManager2 = class {
+  constructor(fs2) {
+    this.fs = fs2;
+  }
+  fs;
+  get plansDir() {
+    return this.fs.resolveContinuity("plans");
+  }
+  slugify(title) {
+    return title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").substring(0, 50);
+  }
+  getPlanDir(status) {
+    return path8.join(this.plansDir, status);
+  }
+  async createPlan(data) {
+    await this.fs.ensureDir(path8.join(this.plansDir, "active"));
+    await this.fs.ensureDir(path8.join(this.plansDir, "blocked"));
+    await this.fs.ensureDir(path8.join(this.plansDir, "completed"));
+    await this.fs.ensureDir(path8.join(this.plansDir, "abandoned"));
+    const id = this.slugify(data.title);
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const steps = data.steps.map((s, index) => ({
+      id: `step-${index + 1}`,
+      description: s.description,
+      status: index === 0 ? "in_progress" : "pending",
+      commits: [],
+      files: s.files || []
+    }));
+    const acceptanceCriteria = (data.acceptanceCriteria || []).map((ac, index) => ({
+      id: `crit-${index + 1}`,
+      description: ac,
+      satisfied: false
+    }));
+    const plan = {
+      id,
+      title: data.title,
+      status: "active",
+      goal: data.goal,
+      scope: data.scope || [],
+      steps,
+      constraints: data.constraints || [],
+      dependencies: data.dependencies || [],
+      acceptanceCriteria,
+      currentStep: steps.length > 0 ? steps[0].description : void 0,
+      nextStep: steps.length > 1 ? steps[1].description : void 0,
+      createdAt: now,
+      updatedAt: now
+    };
+    const validated = PlanSchema.parse(plan);
+    await this.savePlanFile(validated);
+    return validated;
+  }
+  async getPlan(id) {
+    const statuses = ["active", "blocked", "completed", "abandoned", "planned"];
+    for (const status of statuses) {
+      const planPath = path8.join(this.getPlanDir(status), `${id}.md`);
+      if (this.fs.exists(planPath)) {
+        const raw = await this.fs.readFile(planPath);
+        return this.parsePlanMarkdown(raw, id, status);
+      }
+    }
+    return void 0;
+  }
+  async getActivePlan() {
+    const activeDir = this.getPlanDir("active");
+    if (!this.fs.exists(activeDir)) return void 0;
+    const files = await this.fs.listFiles(activeDir, ".md");
+    if (files.length === 0) return void 0;
+    const raw = await this.fs.readFile(files[0]);
+    return this.parsePlanMarkdown(raw, path8.basename(files[0], ".md"), "active");
+  }
+  async updatePlan(id, updates) {
+    const plan = await this.getPlan(id);
+    if (!plan) {
+      throw new Error(`Plan with id '${id}' not found.`);
+    }
+    const previousStatus = plan.status;
+    if (updates.completeStepIndex !== void 0 && plan.steps[updates.completeStepIndex]) {
+      plan.steps[updates.completeStepIndex].status = "completed";
+      const nextPending = plan.steps.find((s) => s.status === "pending");
+      if (nextPending) {
+        nextPending.status = "in_progress";
+        plan.currentStep = nextPending.description;
+        const nextNext = plan.steps.filter((s) => s.status === "pending")[1];
+        plan.nextStep = nextNext ? nextNext.description : "Final verification";
+      } else {
+        plan.currentStep = "All steps completed";
+        plan.nextStep = "Plan verification and handover";
+      }
+    }
+    if (updates.addCommitsToStep && plan.steps[updates.addCommitsToStep.stepIndex]) {
+      const step = plan.steps[updates.addCommitsToStep.stepIndex];
+      step.commits = Array.from(/* @__PURE__ */ new Set([...step.commits, ...updates.addCommitsToStep.commits]));
+    }
+    if (updates.satisfyCriterionIndex !== void 0 && plan.acceptanceCriteria[updates.satisfyCriterionIndex]) {
+      plan.acceptanceCriteria[updates.satisfyCriterionIndex].satisfied = true;
+    }
+    if (updates.currentStep) {
+      plan.currentStep = updates.currentStep;
+    }
+    if (updates.status) {
+      plan.status = updates.status;
+    }
+    if (updates.abandonReason) {
+      plan.abandonReason = updates.abandonReason;
+    }
+    plan.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    if (updates.status && updates.status !== previousStatus) {
+      const oldPath = path8.join(this.getPlanDir(previousStatus), `${plan.id}.md`);
+      const newPath = path8.join(this.getPlanDir(updates.status), `${plan.id}.md`);
+      await this.fs.ensureDir(this.getPlanDir(updates.status));
+      if (this.fs.exists(oldPath)) {
+        await this.fs.deleteFile(oldPath);
+      }
+      await this.fs.writeFile(newPath, this.formatPlanMarkdown(plan));
+    } else {
+      await this.savePlanFile(plan);
+    }
+    return plan;
+  }
+  async completePlan(id) {
+    const plan = await this.getPlan(id);
+    if (!plan) throw new Error(`Plan '${id}' not found.`);
+    plan.status = "completed";
+    plan.completedAt = (/* @__PURE__ */ new Date()).toISOString();
+    plan.updatedAt = plan.completedAt;
+    for (const step of plan.steps) {
+      step.status = "completed";
+    }
+    for (const crit of plan.acceptanceCriteria) {
+      crit.satisfied = true;
+    }
+    const oldPath = path8.join(this.getPlanDir("active"), `${plan.id}.md`);
+    const newPath = path8.join(this.getPlanDir("completed"), `${plan.id}.md`);
+    await this.fs.ensureDir(this.getPlanDir("completed"));
+    if (this.fs.exists(oldPath)) {
+      await this.fs.deleteFile(oldPath);
+    }
+    await this.fs.writeFile(newPath, this.formatPlanMarkdown(plan));
+    return plan;
+  }
+  async blockPlan(id, reason) {
+    return this.updatePlan(id, { status: "blocked", abandonReason: reason });
+  }
+  async abandonPlan(id, reason) {
+    return this.updatePlan(id, { status: "abandoned", abandonReason: reason });
+  }
+  async listPlans() {
+    const result = {
+      active: [],
+      blocked: [],
+      completed: [],
+      abandoned: []
+    };
+    const statuses = [
+      "active",
+      "blocked",
+      "completed",
+      "abandoned"
+    ];
+    for (const status of statuses) {
+      const dir = this.getPlanDir(status);
+      const files = await this.fs.listFiles(dir, ".md");
+      for (const file of files) {
+        const id = path8.basename(file, ".md");
+        const raw = await this.fs.readFile(file);
+        const plan = this.parsePlanMarkdown(raw, id, status);
+        if (plan) result[status].push(plan);
+      }
+    }
+    return result;
+  }
+  savePlanFile(plan) {
+    const dir = this.getPlanDir(plan.status);
+    const filePath = path8.join(dir, `${plan.id}.md`);
+    const content = this.formatPlanMarkdown(plan);
+    return this.fs.writeFile(filePath, content);
+  }
+  formatPlanMarkdown(p) {
+    const frontmatter = {
+      id: p.id,
+      title: p.title,
+      status: p.status,
+      goal: p.goal,
+      currentStep: p.currentStep,
+      nextStep: p.nextStep,
+      createdAt: p.createdAt,
+      updatedAt: p.updatedAt,
+      completedAt: p.completedAt,
+      abandonReason: p.abandonReason
+    };
+    const stepsText = p.steps.map((s) => {
+      const check = s.status === "completed" ? "[x]" : s.status === "in_progress" ? "[/]" : "[ ]";
+      let line = `- ${check} ${s.description}`;
+      if (s.commits && s.commits.length > 0) {
+        line += `
+  - Commits: ${s.commits.join(", ")}`;
+      }
+      if (s.files && s.files.length > 0) {
+        line += `
+  - Files: ${s.files.join(", ")}`;
+      }
+      return line;
+    }).join("\n");
+    const criteriaText = p.acceptanceCriteria.map((c) => `- [${c.satisfied ? "x" : " "}] ${c.description}`).join("\n");
+    const body = `# Plan: ${p.title}
+
+Status: ${p.status.toUpperCase()}
+
+## Goal
+${p.goal}
+
+## Scope
+${MarkdownHelper.formatBulletList(p.scope)}
+
+## Plan Steps
+${stepsText || "No steps specified."}
+
+## Constraints
+${MarkdownHelper.formatBulletList(p.constraints)}
+
+## Acceptance Criteria
+${criteriaText || "No criteria defined."}
+
+## Current Step
+${p.currentStep || "None"}
+
+## Next Step
+${p.nextStep || "None"}
+
+${p.abandonReason ? `## Reason
+${p.abandonReason}
+` : ""}
+`;
+    return MarkdownHelper.stringify(body, frontmatter);
+  }
+  parsePlanMarkdown(raw, fallbackId, fallbackStatus) {
+    const parsed = MarkdownHelper.parse(raw);
+    const sections = MarkdownHelper.extractSections(parsed.content);
+    const title = parsed.data.title || fallbackId;
+    const goal = parsed.data.goal || sections.get("Goal") || "";
+    const status = parsed.data.status || fallbackStatus;
+    const stepsRaw = sections.get("Plan Steps") || "";
+    const steps = [];
+    const stepLines = stepsRaw.split("\n");
+    let currentStepItem = null;
+    for (const line of stepLines) {
+      const match = line.match(/^-\s*\[([ x/])\]\s*(.+)$/);
+      if (match) {
+        if (currentStepItem) steps.push(currentStepItem);
+        const check = match[1];
+        const stepStatus = check === "x" ? "completed" : check === "/" ? "in_progress" : "pending";
+        currentStepItem = {
+          id: `step-${steps.length + 1}`,
+          description: match[2].trim(),
+          status: stepStatus,
+          commits: [],
+          files: []
+        };
+      } else if (currentStepItem && line.trim().startsWith("- Commits:")) {
+        currentStepItem.commits = line.replace(/.*- Commits:\s*/, "").split(",").map((c) => c.trim());
+      } else if (currentStepItem && line.trim().startsWith("- Files:")) {
+        currentStepItem.files = line.replace(/.*- Files:\s*/, "").split(",").map((f) => f.trim());
+      }
+    }
+    if (currentStepItem) steps.push(currentStepItem);
+    const criteriaRaw = sections.get("Acceptance Criteria") || "";
+    const criteria = [];
+    for (const line of criteriaRaw.split("\n")) {
+      const match = line.match(/^-\s*\[([ x])\]\s*(.+)$/);
+      if (match) {
+        criteria.push({
+          id: `crit-${criteria.length + 1}`,
+          description: match[2].trim(),
+          satisfied: match[1] === "x"
+        });
+      }
+    }
+    return {
+      id: parsed.data.id || fallbackId,
+      title,
+      status,
+      goal,
+      scope: MarkdownHelper.parseBulletList(sections.get("Scope") || ""),
+      steps,
+      constraints: MarkdownHelper.parseBulletList(sections.get("Constraints") || ""),
+      dependencies: MarkdownHelper.parseBulletList(sections.get("Dependencies") || ""),
+      acceptanceCriteria: criteria,
+      currentStep: parsed.data.currentStep || sections.get("Current Step"),
+      nextStep: parsed.data.nextStep || sections.get("Next Step"),
+      createdAt: parsed.data.createdAt || (/* @__PURE__ */ new Date()).toISOString(),
+      updatedAt: parsed.data.updatedAt || (/* @__PURE__ */ new Date()).toISOString(),
+      completedAt: parsed.data.completedAt,
+      abandonReason: parsed.data.abandonReason || sections.get("Reason")
+    };
+  }
+};
+
 // src/core/engine/resume-engine.ts
 var ResumeEngine = class {
-  constructor(stateManager, handoverManager, sessionManager, failureManager, decisionManager, git) {
+  constructor(stateManager, handoverManager, sessionManager, failureManager, decisionManager, git, planManager) {
     this.stateManager = stateManager;
     this.handoverManager = handoverManager;
     this.sessionManager = sessionManager;
     this.failureManager = failureManager;
     this.decisionManager = decisionManager;
     this.git = git;
+    this.planManager = planManager;
   }
   stateManager;
   handoverManager;
@@ -1955,6 +2612,7 @@ var ResumeEngine = class {
   failureManager;
   decisionManager;
   git;
+  planManager;
   async buildContext() {
     const projectInfo = await this.stateManager.getProjectInfo();
     const state = await this.stateManager.getState();
@@ -1963,6 +2621,7 @@ var ResumeEngine = class {
     const latestSession = await this.sessionManager.getLatestSession();
     const failures = await this.failureManager.listFailures();
     const decisions = await this.decisionManager.listDecisions();
+    const activePlan = this.planManager ? await this.planManager.getActivePlan() : void 0;
     let nextAction = latestHandover?.nextAction || (typeof state.nextAction === "object" ? state.nextAction : {
       problem: state.nextAction || "Continue work",
       expectedSolution: "Proceed to next task milestone",
@@ -1973,9 +2632,11 @@ var ResumeEngine = class {
         ...state.currentFiles,
         ...latestHandover?.modifiedFiles || [],
         ...gitStatus.modifiedFiles,
-        ...nextAction.file ? [nextAction.file] : []
+        ...nextAction.file ? [nextAction.file] : [],
+        ...activePlan ? activePlan.steps.flatMap((s) => s.files) : []
       ])
     ).slice(0, 10);
+    const recentCommits = await this.git.getRecentCommits(5);
     const previousFailedApproaches = [
       ...latestHandover?.failedApproaches || [],
       ...failures.map((f) => `[${f.title}]: ${f.doNotRepeat} -> ${f.betterApproach}`)
@@ -1984,6 +2645,22 @@ var ResumeEngine = class {
       ...latestHandover?.decisions || [],
       ...decisions.slice(-3).map((d) => `${d.id} (${d.title}): ${d.decision}`)
     ].slice(0, 3);
+    let planData;
+    if (activePlan) {
+      const completedSteps = activePlan.steps.filter((s) => s.status === "completed").length;
+      const progressPercentage = activePlan.steps.length > 0 ? Math.round(completedSteps / activePlan.steps.length * 100) : 0;
+      planData = {
+        id: activePlan.id,
+        title: activePlan.title,
+        status: activePlan.status,
+        goal: activePlan.goal,
+        currentStep: activePlan.currentStep,
+        nextStep: activePlan.nextStep,
+        progressPercentage,
+        steps: activePlan.steps.map((s) => ({ id: s.id, description: s.description, status: s.status })),
+        constraints: activePlan.constraints
+      };
+    }
     return {
       project: projectInfo.name || state.project,
       purpose: projectInfo.purpose || "",
@@ -1992,15 +2669,18 @@ var ResumeEngine = class {
       commit: gitStatus.commit?.shortHash || state.lastCommit,
       currentTask: state.currentTask,
       progress: state.progress,
+      plan: planData,
       completed: state.completed,
       remaining: state.remaining,
       currentBlocker: state.currentBlocker,
       relevantFiles,
+      recentCommits,
       previousFailedApproaches,
       recentDecisions,
       lastSession: latestSession?.id || state.lastSession,
       nextAction,
-      hasUncommittedChanges: gitStatus.hasUncommittedChanges
+      hasUncommittedChanges: gitStatus.hasUncommittedChanges,
+      uncommittedStats: gitStatus.stats
     };
   }
   formatCompact(ctx) {
@@ -2009,10 +2689,28 @@ var ResumeEngine = class {
       `Project: ${ctx.project}`,
       `Branch: ${ctx.branch}${ctx.commit ? ` (${ctx.commit})` : ""}`,
       `Current Task: ${ctx.currentTask} [${ctx.progress}% completed]`,
-      `Status: ${ctx.currentBlocker ? `BLOCKED - ${ctx.currentBlocker}` : "In Progress"}`,
+      `Status: ${ctx.currentBlocker ? `BLOCKED - ${ctx.currentBlocker}` : "In Progress"}`
+    ];
+    if (ctx.plan) {
+      lines.push(
+        `Active Plan: ${ctx.plan.title} [${ctx.plan.progressPercentage}% completed]`,
+        `Current Step: ${ctx.plan.currentStep || "None"}`
+      );
+    }
+    lines.push(
       `Uncommitted Changes: ${ctx.hasUncommittedChanges ? "YES (check git status)" : "None"}
 `,
-      "--- LAST COMPLETED ---",
+      "--- RECENT GIT COMMITS ---"
+    );
+    if (ctx.recentCommits.length > 0) {
+      for (const c of ctx.recentCommits.slice(0, 3)) {
+        lines.push(`\u2022 ${c.shortHash} ${c.message} (${c.author})`);
+      }
+    } else {
+      lines.push("No recent commits");
+    }
+    lines.push(
+      "\n--- LAST COMPLETED ---",
       ctx.completed.length > 0 ? ctx.completed.slice(-3).map((c) => `\u2713 ${c}`).join("\n") : "None recorded",
       "\n--- WORK REMAINING ---",
       ctx.remaining.length > 0 ? ctx.remaining.slice(0, 4).map((r) => `\u25A1 ${r}`).join("\n") : "None recorded",
@@ -2028,48 +2726,68 @@ var ResumeEngine = class {
       ctx.nextAction.constraints && ctx.nextAction.constraints.length > 0 ? `Constraints:
 ${ctx.nextAction.constraints.map((c) => `  * ${c}`).join("\n")}` : "",
       "\n===================================================="
-    ];
+    );
     return lines.filter((l) => l !== "").join("\n");
   }
   formatFullMarkdown(ctx) {
-    return `# Continuity Resume Context
-
-## 1. Project Identity
-- **Name**: ${ctx.project}
-- **Purpose**: ${ctx.purpose || "Not specified"}
-- **Architecture**: ${ctx.architectureSummary}
-- **Branch**: \`${ctx.branch}\`
-- **Commit**: \`${ctx.commit || "unknown"}\`
-- **Uncommitted Changes**: ${ctx.hasUncommittedChanges ? "Yes" : "No"}
-
-## 2. Current Task & Progress
-- **Task**: ${ctx.currentTask}
-- **Progress**: ${ctx.progress}%
-- **Blocker**: ${ctx.currentBlocker || "None"}
-
-### Completed
-${MarkdownHelper.formatBulletList(ctx.completed, "\u2713")}
-
-### Remaining
-${MarkdownHelper.formatBulletList(ctx.remaining, "\u25A1")}
-
-## 3. Relevant Source Files
-${MarkdownHelper.formatBulletList(ctx.relevantFiles)}
-
-## 4. Architectural Constraints & Key Decisions
-${MarkdownHelper.formatBulletList(ctx.recentDecisions)}
-
-## 5. Failed Approaches ("Do Not Repeat")
-${MarkdownHelper.formatBulletList(ctx.previousFailedApproaches, "\u26A0\uFE0F")}
-
-## 6. Recommended Next Action
-${ctx.nextAction.file ? `- **Open**: \`${ctx.nextAction.file}\`` : ""}
-${ctx.nextAction.focus ? `- **Focus**: \`${ctx.nextAction.focus}\`` : ""}
-- **Problem**: ${ctx.nextAction.problem}
-- **Expected Solution**: ${ctx.nextAction.expectedSolution}
-${ctx.nextAction.constraints.length > 0 ? `- **Constraints**:
-${MarkdownHelper.formatBulletList(ctx.nextAction.constraints, "  *")}` : ""}
-`;
+    const lines = [
+      "# Continuity Resume Context",
+      "\n## 1. Project Identity",
+      `- **Name**: ${ctx.project}`,
+      `- **Purpose**: ${ctx.purpose || "Not specified"}`,
+      `- **Architecture**: ${ctx.architectureSummary}`,
+      `- **Branch**: \`${ctx.branch}\``,
+      `- **Commit**: \`${ctx.commit || "unknown"}\``,
+      `- **Uncommitted Changes**: ${ctx.hasUncommittedChanges ? "Yes" : "No"}`
+    ];
+    if (ctx.plan) {
+      lines.push(
+        "\n## 2. Active Plan",
+        `- **Plan**: ${ctx.plan.title} (\`${ctx.plan.id}\`)`,
+        `- **Goal**: ${ctx.plan.goal}`,
+        `- **Progress**: ${ctx.plan.progressPercentage}%`,
+        `- **Current Step**: ${ctx.plan.currentStep || "None"}`,
+        `- **Next Step**: ${ctx.plan.nextStep || "None"}`
+      );
+      if (ctx.plan.constraints.length > 0) {
+        lines.push(`- **Constraints**:
+${MarkdownHelper.formatBulletList(ctx.plan.constraints, "  *")}`);
+      }
+    }
+    lines.push(
+      "\n## 3. Current Task & Progress",
+      `- **Task**: ${ctx.currentTask}`,
+      `- **Progress**: ${ctx.progress}%`,
+      `- **Blocker**: ${ctx.currentBlocker || "None"}`,
+      "\n### Completed",
+      MarkdownHelper.formatBulletList(ctx.completed, "\u2713"),
+      "\n### Remaining",
+      MarkdownHelper.formatBulletList(ctx.remaining, "\u25A1"),
+      "\n## 4. Recent Git History"
+    );
+    if (ctx.recentCommits.length > 0) {
+      for (const c of ctx.recentCommits) {
+        lines.push(`- \`${c.shortHash}\` **${c.message}** (${c.author}, ${c.date})`);
+      }
+    } else {
+      lines.push("No recent commits.");
+    }
+    lines.push(
+      "\n## 5. Relevant Source Files",
+      MarkdownHelper.formatBulletList(ctx.relevantFiles),
+      "\n## 6. Architectural Constraints & Key Decisions",
+      MarkdownHelper.formatBulletList(ctx.recentDecisions),
+      '\n## 7. Failed Approaches ("Do Not Repeat")',
+      MarkdownHelper.formatBulletList(ctx.previousFailedApproaches, "\u26A0\uFE0F"),
+      "\n## 8. Recommended Next Action",
+      ctx.nextAction.file ? `- **Open**: \`${ctx.nextAction.file}\`` : "",
+      ctx.nextAction.focus ? `- **Focus**: \`${ctx.nextAction.focus}\`` : "",
+      `- **Problem**: ${ctx.nextAction.problem}`,
+      `- **Expected Solution**: ${ctx.nextAction.expectedSolution}`,
+      ctx.nextAction.constraints.length > 0 ? `- **Constraints**:
+${MarkdownHelper.formatBulletList(ctx.nextAction.constraints, "  *")}` : ""
+    );
+    return lines.filter((l) => l !== "").join("\n");
   }
 };
 
@@ -2087,13 +2805,15 @@ async function runResume(options = {}) {
   const failureManager = new FailureManager(fs2);
   const handoverManager = new HandoverManager(fs2, git, stateManager, decisionManager, failureManager);
   const sessionManager = new SessionManager(fs2, stateManager);
+  const planManager = new PlanManager2(fs2);
   const resumeEngine = new ResumeEngine(
     stateManager,
     handoverManager,
     sessionManager,
     failureManager,
     decisionManager,
-    git
+    git,
+    planManager
   );
   const context = await resumeEngine.buildContext();
   if (options.json) {
@@ -2119,12 +2839,14 @@ async function runHandover(options = {}) {
   const stateManager = new StateManager(fs2);
   const decisionManager = new DecisionManager(fs2);
   const failureManager = new FailureManager(fs2);
+  const planManager = new PlanManager(fs2);
   const handoverManager = new HandoverManager(fs2, git, stateManager, decisionManager, failureManager);
   const currentState = await stateManager.getState();
-  const progress = options.progress !== void 0 ? parseInt(options.progress, 10) : void 0;
-  const completed = options.completed ? options.completed.split(",").map((s) => s.trim()) : void 0;
-  const remaining = options.remaining ? options.remaining.split(",").map((s) => s.trim()) : void 0;
-  const constraints = options.constraints ? options.constraints.split(",").map((s) => s.trim()) : [];
+  const activePlan = await planManager.getActivePlan();
+  const progress = options.progress !== void 0 ? parseInt(options.progress, 10) : activePlan ? Math.round(activePlan.steps.filter((s) => s.status === "completed").length / Math.max(1, activePlan.steps.length) * 100) : void 0;
+  const completed = options.completed ? options.completed.split(",").map((s) => s.trim()) : activePlan ? activePlan.steps.filter((s) => s.status === "completed").map((s) => s.description) : void 0;
+  const remaining = options.remaining ? options.remaining.split(",").map((s) => s.trim()) : activePlan ? activePlan.steps.filter((s) => s.status !== "completed").map((s) => s.description) : void 0;
+  const constraints = options.constraints ? options.constraints.split(",").map((s) => s.trim()) : activePlan ? activePlan.constraints : [];
   const nextAction = {
     file: options.file,
     focus: options.focus,
@@ -2253,7 +2975,7 @@ async function runContext(query, options = {}) {
 }
 
 // src/core/engine/task-manager.ts
-import path8 from "path";
+import path9 from "path";
 var TaskManager = class {
   constructor(fs2, stateManager) {
     this.fs = fs2;
@@ -2282,6 +3004,9 @@ var TaskManager = class {
       remaining: options.remaining || [],
       blockers: [],
       relatedFiles: options.relatedFiles || [],
+      planId: options.planId,
+      commits: [],
+      acceptanceCriteria: options.acceptanceCriteria || [],
       createdAt: now,
       updatedAt: now
     };
@@ -2351,8 +3076,8 @@ var TaskManager = class {
     if (summary) {
       task.completed = Array.from(/* @__PURE__ */ new Set([...task.completed, summary]));
     }
-    const oldPath = path8.join(this.getTaskDir(previousStatus), `${task.id}.md`);
-    const newPath = path8.join(this.getTaskDir("completed"), `${task.id}.md`);
+    const oldPath = path9.join(this.getTaskDir(previousStatus), `${task.id}.md`);
+    const newPath = path9.join(this.getTaskDir("completed"), `${task.id}.md`);
     await this.fs.ensureDir(this.getTaskDir("completed"));
     const content = this.formatTaskMarkdown(task);
     if (this.fs.exists(oldPath) && oldPath !== newPath) {
@@ -2377,8 +3102,8 @@ var TaskManager = class {
     task.status = "blocked";
     task.blockers = Array.from(/* @__PURE__ */ new Set([...task.blockers, reason]));
     task.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    const oldPath = path8.join(this.getTaskDir(previousStatus), `${task.id}.md`);
-    const newPath = path8.join(this.getTaskDir("blocked"), `${task.id}.md`);
+    const oldPath = path9.join(this.getTaskDir(previousStatus), `${task.id}.md`);
+    const newPath = path9.join(this.getTaskDir("blocked"), `${task.id}.md`);
     await this.fs.ensureDir(this.getTaskDir("blocked"));
     const content = this.formatTaskMarkdown(task);
     if (this.fs.exists(oldPath) && oldPath !== newPath) {
@@ -2395,7 +3120,7 @@ var TaskManager = class {
   async getTask(id) {
     const statuses = ["active", "blocked", "completed"];
     for (const status of statuses) {
-      const taskPath = path8.join(this.getTaskDir(status), `${id}.md`);
+      const taskPath = path9.join(this.getTaskDir(status), `${id}.md`);
       if (this.fs.exists(taskPath)) {
         const raw = await this.fs.readFile(taskPath);
         return this.parseTaskMarkdown(raw, id, status);
@@ -2414,7 +3139,7 @@ var TaskManager = class {
       const dir = this.getTaskDir(status);
       const files = await this.fs.listFiles(dir, ".md");
       for (const file of files) {
-        const id = path8.basename(file, ".md");
+        const id = path9.basename(file, ".md");
         const raw = await this.fs.readFile(file);
         const task = this.parseTaskMarkdown(raw, id, status);
         result[status].push(task);
@@ -2424,7 +3149,7 @@ var TaskManager = class {
   }
   saveTaskFile(task) {
     const dir = this.getTaskDir(task.status);
-    const filePath = path8.join(dir, `${task.id}.md`);
+    const filePath = path9.join(dir, `${task.id}.md`);
     const content = this.formatTaskMarkdown(task);
     return this.fs.writeFile(filePath, content);
   }
@@ -2476,6 +3201,9 @@ ${MarkdownHelper.formatBulletList(task.relatedFiles)}
       remaining: parsed.data.remaining || MarkdownHelper.parseBulletList(sections.get("Remaining") || ""),
       blockers: parsed.data.blockers || MarkdownHelper.parseBulletList(sections.get("Blockers") || ""),
       relatedFiles: parsed.data.relatedFiles || MarkdownHelper.parseBulletList(sections.get("Related Files") || ""),
+      planId: parsed.data.planId,
+      commits: parsed.data.commits || [],
+      acceptanceCriteria: parsed.data.acceptanceCriteria || [],
       createdAt: parsed.data.createdAt || (/* @__PURE__ */ new Date()).toISOString(),
       updatedAt: parsed.data.updatedAt || (/* @__PURE__ */ new Date()).toISOString(),
       completedAt: parsed.data.completedAt
@@ -2614,6 +3342,635 @@ COMPLETED (${tasks.completed.length}):`);
   }
 }
 
+// src/cli/commands/plan.ts
+async function runPlanCreate(title, options = {}) {
+  const fs2 = new FileSystem();
+  if (!fs2.isInitialized()) {
+    TerminalFormatter.error("Continuity is not initialized. Run 'continuity init' first.");
+    process.exitCode = 1;
+    return;
+  }
+  const planManager = new PlanManager2(fs2);
+  const goal = options.goal || `Implement and deliver ${title}`;
+  const scope = options.scope ? options.scope.split(",").map((s) => s.trim()) : [];
+  const stepItems = options.steps ? options.steps.split(",").map((s) => ({ description: s.trim() })) : [
+    { description: "Design architecture and requirements" },
+    { description: "Implement core functionality" },
+    { description: "Write tests and verify" }
+  ];
+  const constraints = options.constraints ? options.constraints.split(",").map((s) => s.trim()) : [];
+  const acceptanceCriteria = options.criteria ? options.criteria.split(",").map((s) => s.trim()) : [];
+  const plan = await planManager.createPlan({
+    title,
+    goal,
+    scope,
+    steps: stepItems,
+    constraints,
+    acceptanceCriteria
+  });
+  TerminalFormatter.success(`Plan created: "${plan.title}" (id: ${plan.id})`);
+  TerminalFormatter.item("Status", plan.status.toUpperCase());
+  TerminalFormatter.item("Goal", plan.goal);
+  TerminalFormatter.item("Steps", plan.steps.length);
+  TerminalFormatter.item("Current Step", plan.currentStep);
+  TerminalFormatter.info(`Stored in .continuity/plans/active/${plan.id}.md`);
+}
+async function runPlanList() {
+  const fs2 = new FileSystem();
+  if (!fs2.isInitialized()) {
+    TerminalFormatter.error("Continuity is not initialized. Run 'continuity init' first.");
+    process.exitCode = 1;
+    return;
+  }
+  const planManager = new PlanManager2(fs2);
+  const plans = await planManager.listPlans();
+  TerminalFormatter.header("Continuity Plans");
+  console.log(`
+ACTIVE (${plans.active.length}):`);
+  if (plans.active.length === 0) console.log("  None");
+  for (const p of plans.active) {
+    const completedSteps = p.steps.filter((s) => s.status === "completed").length;
+    const pct = p.steps.length > 0 ? Math.round(completedSteps / p.steps.length * 100) : 0;
+    console.log(`  \u2022 [${pct}%] ${p.title} (id: ${p.id})`);
+    console.log(`    Current: ${p.currentStep || "None"}`);
+  }
+  console.log(`
+BLOCKED (${plans.blocked.length}):`);
+  if (plans.blocked.length === 0) console.log("  None");
+  for (const p of plans.blocked) {
+    console.log(`  \u2022 ${p.title} (Reason: ${p.abandonReason || "unspecified"})`);
+  }
+  console.log(`
+COMPLETED (${plans.completed.length}):`);
+  if (plans.completed.length === 0) console.log("  None");
+  for (const p of plans.completed) {
+    console.log(`  \u2713 ${p.title} (completed: ${p.completedAt?.split("T")[0]})`);
+  }
+  console.log(`
+ABANDONED (${plans.abandoned.length}):`);
+  if (plans.abandoned.length === 0) console.log("  None");
+  for (const p of plans.abandoned) {
+    console.log(`  \u2717 ${p.title} (Reason: ${p.abandonReason || "unspecified"})`);
+  }
+}
+async function runPlanShow(id) {
+  const fs2 = new FileSystem();
+  if (!fs2.isInitialized()) {
+    TerminalFormatter.error("Continuity is not initialized. Run 'continuity init' first.");
+    process.exitCode = 1;
+    return;
+  }
+  const planManager = new PlanManager2(fs2);
+  const plan = await planManager.getPlan(id);
+  if (!plan) {
+    TerminalFormatter.error(`Plan '${id}' not found.`);
+    process.exitCode = 1;
+    return;
+  }
+  TerminalFormatter.header(`Plan: ${plan.title} [${plan.status.toUpperCase()}]`);
+  TerminalFormatter.item("Goal", plan.goal);
+  TerminalFormatter.item("Current Step", plan.currentStep);
+  TerminalFormatter.item("Next Step", plan.nextStep);
+  TerminalFormatter.section("STEPS");
+  for (let i = 0; i < plan.steps.length; i++) {
+    const s = plan.steps[i];
+    const mark = s.status === "completed" ? "\u2713" : s.status === "in_progress" ? "\u25B6" : "\u25A1";
+    console.log(`  ${mark} [${i + 1}] ${s.description} (${s.status})`);
+    if (s.commits.length > 0) console.log(`      Commits: ${s.commits.join(", ")}`);
+  }
+  if (plan.acceptanceCriteria.length > 0) {
+    TerminalFormatter.section("ACCEPTANCE CRITERIA");
+    for (let i = 0; i < plan.acceptanceCriteria.length; i++) {
+      const c = plan.acceptanceCriteria[i];
+      console.log(`  ${c.satisfied ? "\u2713" : "\u25A1"} [${i + 1}] ${c.description}`);
+    }
+  }
+  if (plan.constraints.length > 0) {
+    TerminalFormatter.section("CONSTRAINTS");
+    for (const c of plan.constraints) {
+      console.log(`  * ${c}`);
+    }
+  }
+}
+async function runPlanUpdate(id, options = {}) {
+  const fs2 = new FileSystem();
+  if (!fs2.isInitialized()) {
+    TerminalFormatter.error("Continuity is not initialized. Run 'continuity init' first.");
+    process.exitCode = 1;
+    return;
+  }
+  const planManager = new PlanManager2(fs2);
+  let completeStepIndex;
+  if (options.completeStep !== void 0) {
+    completeStepIndex = parseInt(options.completeStep, 10) - 1;
+  }
+  let satisfyCriterionIndex;
+  if (options.satisfyCriterion !== void 0) {
+    satisfyCriterionIndex = parseInt(options.satisfyCriterion, 10) - 1;
+  }
+  const updated = await planManager.updatePlan(id, {
+    completeStepIndex,
+    satisfyCriterionIndex,
+    status: options.status || (options.block ? "blocked" : options.abandon ? "abandoned" : void 0),
+    currentStep: options.stepName,
+    abandonReason: options.block || options.abandon
+  });
+  TerminalFormatter.success(`Plan updated: "${updated.title}"`);
+  TerminalFormatter.item("Status", updated.status.toUpperCase());
+  TerminalFormatter.item("Current Step", updated.currentStep);
+  TerminalFormatter.item("Next Step", updated.nextStep);
+}
+
+// src/cli/commands/git.ts
+async function runGitCommand() {
+  const git = new GitClient();
+  const isRepo = await git.isGitRepository();
+  if (!isRepo) {
+    TerminalFormatter.error('Not a Git repository. Run "git init" to enable version tracking.');
+    process.exitCode = 1;
+    return;
+  }
+  const status = await git.getStatus();
+  const recentCommits = await git.getRecentCommits(5);
+  TerminalFormatter.header("Git Context Overview");
+  TerminalFormatter.section("CURRENT REPOSITORY STATE");
+  TerminalFormatter.item("Branch", status.branch);
+  TerminalFormatter.item("HEAD Commit", status.commit ? `${status.commit.shortHash} - ${status.commit.message}` : "None");
+  TerminalFormatter.item("Working Tree", status.hasUncommittedChanges ? "Uncommitted changes present" : "Clean");
+  if (status.stats) {
+    TerminalFormatter.item(
+      "Diff Stats",
+      `${status.stats.filesChanged} files (+${status.stats.insertions} / -${status.stats.deletions})`
+    );
+  }
+  if (status.modifiedFiles.length > 0) {
+    TerminalFormatter.section("MODIFIED FILES");
+    for (const f of status.modifiedFiles) {
+      console.log(`  M ${f}`);
+    }
+  }
+  if (status.stagedFiles.length > 0) {
+    TerminalFormatter.section("STAGED FILES");
+    for (const f of status.stagedFiles) {
+      console.log(`  A ${f}`);
+    }
+  }
+  TerminalFormatter.section("RECENT COMMITS (LEVEL 2)");
+  if (recentCommits.length > 0) {
+    for (const c of recentCommits) {
+      console.log(`\u2022 \`${c.shortHash}\` ${c.message} (${c.author}, ${c.date})`);
+    }
+  } else {
+    console.log("No commits recorded yet.");
+  }
+}
+
+// src/cli/commands/history.ts
+async function runHistoryCommand(targetPath, options = {}) {
+  const git = new GitClient();
+  const isRepo = await git.isGitRepository();
+  if (!isRepo) {
+    TerminalFormatter.error("Not a Git repository.");
+    process.exitCode = 1;
+    return;
+  }
+  const limit = options.limit ? parseInt(options.limit, 10) : 15;
+  if (options.symbol) {
+    TerminalFormatter.header(`Archaeology: Symbol "${options.symbol}" in ${targetPath}`);
+    const symbolCommits = await git.searchSymbolHistory(options.symbol, targetPath, limit);
+    if (symbolCommits.length === 0) {
+      console.log(`No commits found introducing or modifying symbol "${options.symbol}".`);
+      return;
+    }
+    for (const c of symbolCommits) {
+      console.log(`\u2022 \`${c.shortHash}\` (${c.date}) ${c.message} [${c.author}]`);
+    }
+    return;
+  }
+  TerminalFormatter.header(`Temporal Evolution: ${targetPath}`);
+  const evolution = await git.getModuleEvolution(targetPath);
+  TerminalFormatter.item("Total Commits Touching Module", evolution.totalCommits);
+  if (evolution.releases.length > 0) {
+    TerminalFormatter.section("VERSION BOUNDARIES & RELEASES");
+    for (const rel of evolution.releases) {
+      console.log(`
+Tag: ${rel.tag} (${rel.date})`);
+      for (const c of rel.commits) {
+        console.log(`  \u2022 \`${c.shortHash}\` ${c.message}`);
+      }
+    }
+  }
+  TerminalFormatter.section("RECENT COMMITS");
+  if (evolution.recentCommits.length > 0) {
+    for (const c of evolution.recentCommits) {
+      console.log(`\u2022 \`${c.shortHash}\` (${c.date}) ${c.message} [${c.author}]`);
+    }
+  } else {
+    console.log("No recent commits touching this target.");
+  }
+}
+
+// src/cli/commands/diff.ts
+async function runDiffCommand(files) {
+  const git = new GitClient();
+  const isRepo = await git.isGitRepository();
+  if (!isRepo) {
+    TerminalFormatter.error("Not a Git repository.");
+    process.exitCode = 1;
+    return;
+  }
+  const contextDiff = await git.getContextDiff(files);
+  if (!contextDiff.trim()) {
+    console.log("No uncommitted changes.");
+    return;
+  }
+  console.log(contextDiff);
+}
+
+// src/core/verify/verification-engine.ts
+import { execFile as execFile2 } from "child_process";
+import { promisify as promisify2 } from "util";
+var execFileAsync2 = promisify2(execFile2);
+var VerificationEngine = class {
+  constructor(planManager, git, fs2) {
+    this.planManager = planManager;
+    this.git = git;
+    this.fs = fs2;
+  }
+  planManager;
+  git;
+  fs;
+  async verify(planId, runTests = false) {
+    const checks = [];
+    const plan = planId ? await this.planManager.getPlan(planId) : await this.planManager.getActivePlan();
+    let stepsTotal = 0;
+    let stepsCompleted = 0;
+    let criteriaTotal = 0;
+    let criteriaSatisfied = 0;
+    if (plan) {
+      stepsTotal = plan.steps.length;
+      stepsCompleted = plan.steps.filter((s) => s.status === "completed").length;
+      criteriaTotal = plan.acceptanceCriteria.length;
+      criteriaSatisfied = plan.acceptanceCriteria.filter((c) => c.satisfied).length;
+      checks.push({
+        name: "Plan Steps Progress",
+        passed: stepsCompleted === stepsTotal,
+        message: `${stepsCompleted}/${stepsTotal} planned steps completed`,
+        warning: stepsCompleted < stepsTotal
+      });
+      checks.push({
+        name: "Acceptance Criteria",
+        passed: criteriaSatisfied === criteriaTotal,
+        message: `${criteriaSatisfied}/${criteriaTotal} criteria satisfied`,
+        warning: criteriaSatisfied < criteriaTotal
+      });
+    } else {
+      checks.push({
+        name: "Active Plan",
+        passed: false,
+        message: 'No active plan found. Run "continuity plan create" to establish a plan.',
+        warning: true
+      });
+    }
+    const gitStatus = await this.git.getStatus();
+    const uncommittedFilesCount = gitStatus.modifiedFiles.length + gitStatus.stagedFiles.length;
+    checks.push({
+      name: "Working Tree State",
+      passed: uncommittedFilesCount === 0,
+      message: uncommittedFilesCount === 0 ? "Working tree is clean" : `${uncommittedFilesCount} uncommitted file(s) detected`,
+      warning: uncommittedFilesCount > 0
+    });
+    let testsPassed;
+    let testOutput;
+    if (runTests) {
+      const pkgPath = this.fs.resolve("package.json");
+      if (this.fs.exists(pkgPath)) {
+        try {
+          const pkg = JSON.parse(await this.fs.readFile(pkgPath));
+          if (pkg.scripts && pkg.scripts.test) {
+            try {
+              const { stdout } = await execFileAsync2("npm", ["test"], { cwd: this.fs.rootDir });
+              testsPassed = true;
+              testOutput = stdout.slice(-300);
+            } catch (err) {
+              testsPassed = false;
+              testOutput = (err.stdout || err.message || "").slice(-300);
+            }
+            checks.push({
+              name: "Automated Test Suite",
+              passed: testsPassed === true,
+              message: testsPassed ? "All automated tests passed" : "Test suite failed execution"
+            });
+          }
+        } catch {
+        }
+      }
+    }
+    let status = "IN_PROGRESS";
+    let nextRecommendedAction = "";
+    if (plan && plan.status === "blocked") {
+      status = "BLOCKED";
+      nextRecommendedAction = `Resolve blocker: ${plan.abandonReason || "external dependency"}`;
+    } else if (plan && stepsCompleted === stepsTotal && criteriaSatisfied === criteriaTotal && (testsPassed === void 0 || testsPassed === true)) {
+      status = "READY_FOR_HANDOVER";
+      nextRecommendedAction = uncommittedFilesCount > 0 ? 'Commit remaining changes and run "continuity handover"' : 'Run "continuity handover" to package completed work';
+    } else {
+      status = "IN_PROGRESS";
+      const pendingStep = plan?.steps.find((s) => s.status !== "completed");
+      nextRecommendedAction = pendingStep ? `Work on step: ${pendingStep.description}` : "Continue implementation of active task";
+    }
+    return {
+      plan,
+      status,
+      stepsTotal,
+      stepsCompleted,
+      criteriaTotal,
+      criteriaSatisfied,
+      uncommittedFilesCount,
+      testsPassed,
+      testOutput,
+      checks,
+      nextRecommendedAction
+    };
+  }
+};
+
+// src/cli/commands/verify.ts
+async function runVerify(planId, options = {}) {
+  const fs2 = new FileSystem();
+  if (!fs2.isInitialized()) {
+    TerminalFormatter.error("Continuity is not initialized. Run 'continuity init' first.");
+    process.exitCode = 1;
+    return;
+  }
+  const git = new GitClient();
+  const planManager = new PlanManager2(fs2);
+  const verifier = new VerificationEngine(planManager, git, fs2);
+  TerminalFormatter.header("Continuity Plan & Work Verification");
+  const report = await verifier.verify(planId, options.test ?? false);
+  for (const check of report.checks) {
+    if (check.passed) {
+      TerminalFormatter.success(`${check.name}: ${check.message}`);
+    } else if (check.warning) {
+      TerminalFormatter.warning(`${check.name}: ${check.message}`);
+    } else {
+      TerminalFormatter.error(`${check.name}: ${check.message}`);
+    }
+  }
+  if (report.testOutput && options.test) {
+    TerminalFormatter.section("TEST OUTPUT");
+    console.log(report.testOutput);
+  }
+  TerminalFormatter.section("VERIFICATION STATUS");
+  const statusColor = report.status === "READY_FOR_HANDOVER" ? "READY FOR HANDOVER" : report.status === "BLOCKED" ? "BLOCKED" : "IN PROGRESS";
+  TerminalFormatter.item("Status", statusColor);
+  TerminalFormatter.item("Next Recommended Action", report.nextRecommendedAction);
+  if (report.status === "READY_FOR_HANDOVER") {
+    TerminalFormatter.box("Ready for Handover", [
+      "All planned steps and criteria are satisfied.",
+      "Run: continuity handover"
+    ]);
+  }
+}
+
+// src/core/context/context-ranker.ts
+var ContextRanker = class {
+  rank(candidates) {
+    const items = [];
+    const taskTitle = candidates.task?.title || "Active Work";
+    const taskWords = new Set(taskTitle.toLowerCase().split(/\s+/).filter((w) => w.length > 2));
+    const targetFiles = new Set(candidates.currentFiles.map((f) => f.toLowerCase()));
+    if (candidates.plan) {
+      const p = candidates.plan;
+      let planScore = 0.85;
+      const reasons = ["Active architectural plan"];
+      const stepText = p.steps.map((s) => `[${s.status}] ${s.description}`).join("; ");
+      items.push({
+        id: `plan-${p.id}`,
+        source: "plan",
+        title: `Plan: ${p.title} (${p.status.toUpperCase()})`,
+        summary: `Goal: ${p.goal} | Current Step: ${p.currentStep || "None"}`,
+        content: `Goal: ${p.goal}
+Steps: ${stepText}
+Constraints: ${p.constraints.join(", ")}`,
+        files: p.steps.flatMap((s) => s.files),
+        commits: p.steps.flatMap((s) => s.commits),
+        score: planScore,
+        tier: "HIGH",
+        reasons
+      });
+    }
+    for (const commit of candidates.recentCommits) {
+      let score = 0.15;
+      const reasons = [];
+      if (commit.filesChanged) {
+        const touchesTarget = commit.filesChanged.some((f) => targetFiles.has(f.toLowerCase()));
+        if (touchesTarget) {
+          score += 0.4;
+          reasons.push("Touches currently active files");
+        }
+      }
+      const msgWords = commit.message.toLowerCase().split(/\s+/);
+      const overlap = msgWords.filter((w) => taskWords.has(w)).length;
+      if (overlap > 0) {
+        score += Math.min(0.35, overlap * 0.15);
+        reasons.push(`Commit message matches task (${overlap} keywords)`);
+      }
+      score += 0.1;
+      const tier = score >= 0.5 ? "HIGH" : score >= 0.25 ? "MEDIUM" : "FILTERED";
+      items.push({
+        id: `commit-${commit.shortHash}`,
+        source: "git",
+        title: `Commit ${commit.shortHash}: ${commit.message}`,
+        summary: `${commit.author} on ${commit.date}`,
+        content: commit.message,
+        files: commit.filesChanged || [],
+        commits: [commit.shortHash],
+        date: commit.date,
+        score,
+        tier,
+        reasons
+      });
+    }
+    for (const decision of candidates.decisions) {
+      let score = 0.2;
+      const reasons = [];
+      const decisionWords = (decision.title + " " + decision.decision + " " + decision.why).toLowerCase().split(/\s+/);
+      const overlap = decisionWords.filter((w) => taskWords.has(w)).length;
+      if (overlap > 0) {
+        score += Math.min(0.5, overlap * 0.2);
+        reasons.push(`ADR aligns with task keywords (${overlap})`);
+      }
+      const touchesFile = Array.from(targetFiles).some(
+        (f) => decision.decision.toLowerCase().includes(f) || decision.why.toLowerCase().includes(f)
+      );
+      if (touchesFile) {
+        score += 0.35;
+        reasons.push("Decision references active file");
+      }
+      const tier = score >= 0.5 ? "HIGH" : score >= 0.25 ? "MEDIUM" : "FILTERED";
+      items.push({
+        id: `adr-${decision.id}`,
+        source: "decision",
+        title: `${decision.id}: ${decision.title}`,
+        summary: decision.decision,
+        content: `Decision: ${decision.decision}
+Why: ${decision.why}`,
+        files: [],
+        commits: [],
+        date: decision.date,
+        score,
+        tier,
+        reasons
+      });
+    }
+    for (const failure of candidates.failures) {
+      let score = 0.3;
+      const reasons = ["Failed approach lesson"];
+      const failureWords = (failure.title + " " + failure.attempt + " " + failure.why).toLowerCase().split(/\s+/);
+      const overlap = failureWords.filter((w) => taskWords.has(w)).length;
+      if (overlap > 0) {
+        score += 0.35;
+        reasons.push("Directly related to active task context");
+      }
+      const touchesFile = failure.relatedFiles.some((rf) => targetFiles.has(rf.toLowerCase()));
+      if (touchesFile) {
+        score += 0.3;
+        reasons.push("Touches current files");
+      }
+      const tier = score >= 0.5 ? "HIGH" : score >= 0.25 ? "MEDIUM" : "FILTERED";
+      items.push({
+        id: `failure-${failure.id}`,
+        source: "failure",
+        title: `DO NOT REPEAT: ${failure.title}`,
+        summary: `${failure.doNotRepeat} -> ${failure.betterApproach}`,
+        content: `Attempt: ${failure.attempt}
+Why: ${failure.why}
+Do Not Repeat: ${failure.doNotRepeat}
+Better Approach: ${failure.betterApproach}`,
+        files: failure.relatedFiles,
+        commits: [],
+        date: failure.date,
+        score,
+        tier,
+        reasons
+      });
+    }
+    for (const session of candidates.sessions) {
+      let score = 0.1;
+      const reasons = [];
+      const sessionWords = (session.objective + " " + session.workCompleted.join(" ")).toLowerCase().split(/\s+/);
+      const overlap = sessionWords.filter((w) => taskWords.has(w)).length;
+      if (overlap > 0) {
+        score += Math.min(0.4, overlap * 0.15);
+        reasons.push("Session completed work related to task");
+      }
+      const touchesFile = session.filesChanged.some((fc) => targetFiles.has(fc.toLowerCase()));
+      if (touchesFile) {
+        score += 0.35;
+        reasons.push("Session modified current files");
+      }
+      const tier = score >= 0.5 ? "HIGH" : score >= 0.25 ? "MEDIUM" : "FILTERED";
+      items.push({
+        id: `sess-${session.id}`,
+        source: "session",
+        title: `Session: ${session.objective}`,
+        summary: `Agent: ${session.agent} (${session.date})`,
+        content: `Work: ${session.workCompleted.join("; ")}
+Next: ${session.nextStep || "None"}`,
+        files: session.filesChanged,
+        commits: session.gitCommit ? [session.gitCommit] : [],
+        date: session.date,
+        score,
+        tier,
+        reasons
+      });
+    }
+    items.sort((a, b) => b.score - a.score);
+    const highPriority = items.filter((i) => i.tier === "HIGH");
+    const mediumPriority = items.filter((i) => i.tier === "MEDIUM");
+    const allContent = [...highPriority, ...mediumPriority].map((i) => i.content).join(" ");
+    const tokenEstimate = Math.ceil(allContent.length / 4);
+    return {
+      task: taskTitle,
+      branch: candidates.branch,
+      commit: candidates.headCommit,
+      highPriority,
+      mediumPriority,
+      totalScore: items.reduce((acc, i) => acc + i.score, 0),
+      tokenEstimate
+    };
+  }
+  formatPrompt(ranked, uncommittedDiff) {
+    const lines = [
+      "# CONTINUITY CONTEXT PACKAGE",
+      `Task: ${ranked.task}`,
+      `Branch: ${ranked.branch}${ranked.commit ? ` (${ranked.commit})` : ""}`,
+      "\n## HIGH PRIORITY CONTEXT"
+    ];
+    for (const item of ranked.highPriority) {
+      lines.push(`
+### [${item.source.toUpperCase()}] ${item.title}`);
+      lines.push(item.content);
+      if (item.files.length > 0) lines.push(`Relevant Files: ${item.files.join(", ")}`);
+    }
+    if (ranked.mediumPriority.length > 0) {
+      lines.push("\n## MEDIUM PRIORITY CONTEXT (HISTORICAL)");
+      for (const item of ranked.mediumPriority.slice(0, 5)) {
+        lines.push(`
+- **[${item.source.toUpperCase()}] ${item.title}**: ${item.summary}`);
+      }
+    }
+    if (uncommittedDiff) {
+      lines.push("\n## CURRENT UNCOMMITTED CHANGES");
+      lines.push(uncommittedDiff);
+    }
+    return lines.join("\n");
+  }
+};
+
+// src/cli/commands/prompt.ts
+async function runPromptCommand(taskName) {
+  const fs2 = new FileSystem();
+  if (!fs2.isInitialized()) {
+    TerminalFormatter.error("Continuity is not initialized. Run 'continuity init' first.");
+    process.exitCode = 1;
+    return;
+  }
+  const git = new GitClient();
+  const stateManager = new StateManager(fs2);
+  const taskManager = new TaskManager(fs2, stateManager);
+  const planManager = new PlanManager2(fs2);
+  const decisionManager = new DecisionManager(fs2);
+  const failureManager = new FailureManager(fs2);
+  const sessionManager = new SessionManager(fs2, stateManager);
+  const ranker = new ContextRanker();
+  const state = await stateManager.getState();
+  const gitStatus = await git.getStatus();
+  const recentCommits = await git.getRecentCommits(10);
+  const sessions = await sessionManager.listSessions();
+  const decisions = await decisionManager.listDecisions();
+  const failures = await failureManager.listFailures();
+  const activePlan = await planManager.getActivePlan();
+  const allTasks = await taskManager.listTasks();
+  const activeTask = allTasks.active.find((t) => taskName ? t.title.toLowerCase().includes(taskName.toLowerCase()) : true) || allTasks.active[0];
+  const uncommittedDiff = gitStatus.hasUncommittedChanges ? await git.getContextDiff() : void 0;
+  const ranked = ranker.rank({
+    task: activeTask,
+    plan: activePlan,
+    currentFiles: state.currentFiles,
+    recentCommits,
+    sessions,
+    decisions,
+    failures,
+    uncommittedDiff,
+    branch: gitStatus.branch,
+    headCommit: gitStatus.commit?.shortHash
+  });
+  const promptOutput = ranker.formatPrompt(ranked, uncommittedDiff);
+  console.log(promptOutput);
+}
+
 // src/cli/commands/decision.ts
 async function runDecision(title, options = {}) {
   const fs2 = new FileSystem();
@@ -2700,7 +4057,7 @@ async function runFailure(title, options = {}) {
 }
 
 // src/cli/commands/checkpoint.ts
-import path9 from "path";
+import path10 from "path";
 async function runCheckpoint(name) {
   const fs2 = new FileSystem();
   if (!fs2.isInitialized()) {
@@ -2719,7 +4076,7 @@ async function runCheckpoint(name) {
   const snapshotId = `${dateStr}-${timeStr}-${slug}`;
   const snapshotsDir = fs2.resolveContinuity("snapshots");
   await fs2.ensureDir(snapshotsDir);
-  const snapshotPath = path9.join(snapshotsDir, `${snapshotId}.md`);
+  const snapshotPath = path10.join(snapshotsDir, `${snapshotId}.md`);
   const content = await fs2.readFile(fs2.resolveContinuity("state.md"));
   await fs2.writeFile(snapshotPath, content);
   TerminalFormatter.success(`Checkpoint snapshot created: ${snapshotId}`);
@@ -2736,7 +4093,7 @@ async function runRestoreContext(snapshotId) {
   }
   const snapshotsDir = fs2.resolveContinuity("snapshots");
   const files = await fs2.listFiles(snapshotsDir, ".md");
-  const match = files.find((f) => path9.basename(f, ".md").includes(snapshotId));
+  const match = files.find((f) => path10.basename(f, ".md").includes(snapshotId));
   if (!match) {
     TerminalFormatter.error(`Snapshot matching '${snapshotId}' not found in .continuity/snapshots/`);
     process.exitCode = 1;
@@ -2744,12 +4101,12 @@ async function runRestoreContext(snapshotId) {
   }
   const content = await fs2.readFile(match);
   await fs2.writeFile(fs2.resolveContinuity("state.md"), content);
-  TerminalFormatter.success(`Restored state context from snapshot: ${path9.basename(match)}`);
+  TerminalFormatter.success(`Restored state context from snapshot: ${path10.basename(match)}`);
   TerminalFormatter.info('Run "continuity status" to view the restored work state.');
 }
 
 // src/core/engine/explain-engine.ts
-import path10 from "path";
+import path11 from "path";
 var ExplainEngine = class {
   constructor(fs2, git, taskManager, decisionManager, failureManager, sessionManager) {
     this.fs = fs2;
@@ -2767,7 +4124,7 @@ var ExplainEngine = class {
   sessionManager;
   async explain(targetPath) {
     const fullPath = this.fs.resolve(targetPath);
-    const relativePath = path10.relative(this.fs.rootDir, fullPath);
+    const relativePath = path11.relative(this.fs.rootDir, fullPath);
     const exists = this.fs.exists(fullPath);
     const commits = await this.git.getFileCommits(relativePath, 20);
     const lastCommit = commits[0];
@@ -2782,7 +4139,7 @@ var ExplainEngine = class {
     const decisions = await this.decisionManager.listDecisions();
     const relatedDecisions = [];
     for (const d of decisions) {
-      if (d.decision.includes(relativePath) || d.why.includes(relativePath) || d.title.toLowerCase().includes(path10.basename(relativePath, path10.extname(relativePath)).toLowerCase())) {
+      if (d.decision.includes(relativePath) || d.why.includes(relativePath) || d.title.toLowerCase().includes(path11.basename(relativePath, path11.extname(relativePath)).toLowerCase())) {
         relatedDecisions.push(`${d.id}: ${d.title}`);
       }
     }
@@ -3189,10 +4546,20 @@ async function runDone(options = {}) {
 
 // src/cli.ts
 var program = new Command();
-program.name("continuity").description("Persistent project-context and work-state system for multi-agent and human AI collaboration").version("0.1.0");
+program.name("continuity").description("Persistent project-context and work-state system for multi-agent and human AI collaboration").version("0.2.0");
 program.command("init").description("Initialize Continuity in the current repository").option("-n, --name <name>", "Project name").option("-d, --description <desc>", "Project purpose and description").option("-s, --stack <items...>", "Key technologies / stack items").option("-f, --force", "Overwrite existing files").option("--with-agents", "Scaffold configuration files for Cursor, Claude Code, Windsurf, Cline").action(runInit);
 program.command("status").description("Display current project work-state, active task, progress, and next action").option("--json", "Output machine-readable JSON").action(runStatus);
 program.command("resume").description("Assemble and load compact prioritized context for continuation by any AI agent").option("-c, --compact", "Output token-efficient compact prompt format (default)").option("--full", "Output full multi-section markdown documentation").option("--json", "Output structured JSON payload").action(runResume);
+program.command("prompt [task]").description("Generate ranked 6-source AI prompt payload ready to pipe to any agent CLI").action(runPromptCommand);
+var planCmd = program.command("plan").description("Manage persistent architectural and implementation plans");
+planCmd.command("create <title>").description("Create a new persistent plan with goals, steps, constraints, and criteria").option("-g, --goal <goal>", "Plan goal statement").option("-s, --steps <items>", "Comma-separated plan steps").option("-c, --constraints <items>", "Comma-separated architectural constraints").option("-a, --criteria <items>", "Comma-separated acceptance criteria").option("--scope <items>", "Comma-separated scope boundaries").action(runPlanCreate);
+planCmd.command("list").description("List all active, blocked, completed, and abandoned plans").action(runPlanList);
+planCmd.command("show <id>").description("Show full details, steps, constraints, and criteria of a plan").action(runPlanShow);
+planCmd.command("update <id>").description("Update plan steps, status, or acceptance criteria").option("--complete-step <number>", "Mark step number as completed").option("--satisfy-criterion <number>", "Mark acceptance criterion number as satisfied").option("--step-name <name>", "Update current step name").option("--block <reason>", "Mark plan as blocked with reason").option("--abandon <reason>", "Mark plan as abandoned with reason").action(runPlanUpdate);
+program.command("verify [planId]").description("Verify plan steps, acceptance criteria, git working tree, and test execution").option("--test", "Run project test suite as part of verification").action((planId, opts) => runVerify(planId, opts));
+program.command("git").description("Inspect current repository branch, commit, status, and recent commits (Levels 1 & 2)").action(runGitCommand);
+program.command("history <path>").description("Inspect temporal evolution, releases, tags, and commits for a file or module").option("-s, --symbol <symbol>", "Search when a specific symbol or function was changed (Pickaxe archaeology)").option("-l, --limit <number>", "Maximum commits to display", "15").action((path12, opts) => runHistoryCommand(path12, opts));
+program.command("diff [files...]").description("Display context-aware smart diff of working tree changes").action(runDiffCommand);
 program.command("handover").description("Package current work state into an actionable continuation package").option("-t, --task <name>", "Current task name").option("-p, --progress <number>", "Progress percentage (0-100)").option("-c, --completed <items>", "Comma-separated completed items").option("-r, --remaining <items>", "Comma-separated remaining items").option("--problem <problem>", "Current blocker or problem to solve").option("--solution <solution>", "Expected solution approach").option("--file <file>", "Specific file to open for next action").option("--focus <focus>", "Specific function or block to focus on").option("--constraints <items>", "Comma-separated architectural constraints").option("--author <author>", "Author or agent identifier").action(runHandover);
 var sessionCmd = program.command("session").description("Manage and record developer and AI sessions");
 sessionCmd.command("save").description("Record a session summary and optional raw archive").option("-a, --agent <agent>", "Agent identifier (claude, cursor, gpt, human, etc.)").option("-o, --objective <objective>", "Session objective").option("-c, --completed <items>", "Comma-separated completed work").option("-f, --files <items>", "Comma-separated modified files").option("-d, --decisions <items>", "Comma-separated decisions made").option("--failed <items>", "Comma-separated failed approaches").option("-p, --problems <items>", "Comma-separated problems or blockers").option("-n, --next <nextStep>", "Next step").option("--context <context>", "Important context or constraints").option("--raw-file <path>", "Path to file containing raw session transcript").action(runSessionSave);

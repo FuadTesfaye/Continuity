@@ -30,6 +30,8 @@ export class TaskManager {
       description?: string;
       remaining?: string[];
       relatedFiles?: string[];
+      planId?: string;
+      acceptanceCriteria?: string[];
     } = {}
   ): Promise<TaskItem> {
     const id = this.slugify(title);
@@ -45,6 +47,9 @@ export class TaskManager {
       remaining: options.remaining || [],
       blockers: [],
       relatedFiles: options.relatedFiles || [],
+      planId: options.planId,
+      commits: [],
+      acceptanceCriteria: options.acceptanceCriteria || [],
       createdAt: now,
       updatedAt: now
     };
@@ -293,6 +298,9 @@ ${MarkdownHelper.formatBulletList(task.relatedFiles)}
       remaining: parsed.data.remaining || MarkdownHelper.parseBulletList(sections.get('Remaining') || ''),
       blockers: parsed.data.blockers || MarkdownHelper.parseBulletList(sections.get('Blockers') || ''),
       relatedFiles: parsed.data.relatedFiles || MarkdownHelper.parseBulletList(sections.get('Related Files') || ''),
+      planId: parsed.data.planId,
+      commits: parsed.data.commits || [],
+      acceptanceCriteria: parsed.data.acceptanceCriteria || [],
       createdAt: parsed.data.createdAt || new Date().toISOString(),
       updatedAt: parsed.data.updatedAt || new Date().toISOString(),
       completedAt: parsed.data.completedAt

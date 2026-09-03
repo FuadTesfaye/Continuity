@@ -14,6 +14,17 @@ import {
   runTaskBlock,
   runTaskList
 } from './cli/commands/task.js';
+import {
+  runPlanCreate,
+  runPlanList,
+  runPlanShow,
+  runPlanUpdate
+} from './cli/commands/plan.js';
+import { runGitCommand } from './cli/commands/git.js';
+import { runHistoryCommand } from './cli/commands/history.js';
+import { runDiffCommand } from './cli/commands/diff.js';
+import { runVerify } from './cli/commands/verify.js';
+import { runPromptCommand } from './cli/commands/prompt.js';
 import { runDecision, runLog } from './cli/commands/decision.js';
 import { runFailure } from './cli/commands/failure.js';
 import { runCheckpoint, runRestoreContext } from './cli/commands/checkpoint.js';
@@ -28,7 +39,7 @@ const program = new Command();
 program
   .name('continuity')
   .description('Persistent project-context and work-state system for multi-agent and human AI collaboration')
-  .version('0.1.0');
+  .version('0.2.0');
 
 // init
 program
@@ -56,6 +67,71 @@ program
   .option('--full', 'Output full multi-section markdown documentation')
   .option('--json', 'Output structured JSON payload')
   .action(runResume);
+
+// prompt
+program
+  .command('prompt [task]')
+  .description('Generate ranked 6-source AI prompt payload ready to pipe to any agent CLI')
+  .action(runPromptCommand);
+
+// plan
+const planCmd = program.command('plan').description('Manage persistent architectural and implementation plans');
+planCmd
+  .command('create <title>')
+  .description('Create a new persistent plan with goals, steps, constraints, and criteria')
+  .option('-g, --goal <goal>', 'Plan goal statement')
+  .option('-s, --steps <items>', 'Comma-separated plan steps')
+  .option('-c, --constraints <items>', 'Comma-separated architectural constraints')
+  .option('-a, --criteria <items>', 'Comma-separated acceptance criteria')
+  .option('--scope <items>', 'Comma-separated scope boundaries')
+  .action(runPlanCreate);
+
+planCmd
+  .command('list')
+  .description('List all active, blocked, completed, and abandoned plans')
+  .action(runPlanList);
+
+planCmd
+  .command('show <id>')
+  .description('Show full details, steps, constraints, and criteria of a plan')
+  .action(runPlanShow);
+
+planCmd
+  .command('update <id>')
+  .description('Update plan steps, status, or acceptance criteria')
+  .option('--complete-step <number>', 'Mark step number as completed')
+  .option('--satisfy-criterion <number>', 'Mark acceptance criterion number as satisfied')
+  .option('--step-name <name>', 'Update current step name')
+  .option('--block <reason>', 'Mark plan as blocked with reason')
+  .option('--abandon <reason>', 'Mark plan as abandoned with reason')
+  .action(runPlanUpdate);
+
+// verify
+program
+  .command('verify [planId]')
+  .description('Verify plan steps, acceptance criteria, git working tree, and test execution')
+  .option('--test', 'Run project test suite as part of verification')
+  .action((planId, opts) => runVerify(planId, opts));
+
+// git
+program
+  .command('git')
+  .description('Inspect current repository branch, commit, status, and recent commits (Levels 1 & 2)')
+  .action(runGitCommand);
+
+// history
+program
+  .command('history <path>')
+  .description('Inspect temporal evolution, releases, tags, and commits for a file or module')
+  .option('-s, --symbol <symbol>', 'Search when a specific symbol or function was changed (Pickaxe archaeology)')
+  .option('-l, --limit <number>', 'Maximum commits to display', '15')
+  .action((path, opts) => runHistoryCommand(path, opts));
+
+// diff
+program
+  .command('diff [files...]')
+  .description('Display context-aware smart diff of working tree changes')
+  .action(runDiffCommand);
 
 // handover
 program

@@ -3,7 +3,9 @@ import { HandoverManager } from './handover-manager.js';
 import { SessionManager } from './session-manager.js';
 import { FailureManager } from './failure-manager.js';
 import { DecisionManager } from './decision-manager.js';
-import { GitClient } from '../git/git-client.js';
+import { PlanManager } from './plan-manager.js';
+import { GitClient, GitCommitInfo } from '../git/git-client.js';
+import { Plan } from '../types/plan.js';
 import { MarkdownHelper } from '../storage/markdown.js';
 
 export interface ResumeContext {
@@ -14,10 +16,22 @@ export interface ResumeContext {
   commit?: string;
   currentTask: string;
   progress: number;
+  plan?: {
+    id: string;
+    title: string;
+    status: string;
+    goal: string;
+    currentStep?: string;
+    nextStep?: string;
+    progressPercentage: number;
+    steps: Array<{ id: string; description: string; status: string }>;
+    constraints: string[];
+  };
   completed: string[];
   remaining: string[];
   currentBlocker?: string | null;
   relevantFiles: string[];
+  recentCommits: GitCommitInfo[];
   previousFailedApproaches: string[];
   recentDecisions: string[];
   lastSession?: string;
@@ -29,6 +43,11 @@ export interface ResumeContext {
     constraints: string[];
   };
   hasUncommittedChanges: boolean;
+  uncommittedStats?: {
+    filesChanged: number;
+    insertions: number;
+    deletions: number;
+  };
 }
 
 export class ResumeEngine {
@@ -38,7 +57,8 @@ export class ResumeEngine {
     private readonly sessionManager: SessionManager,
     private readonly failureManager: FailureManager,
     private readonly decisionManager: DecisionManager,
-    private readonly git: GitClient
+    private readonly git: GitClient,
+    private readonly planManager?: PlanManager
   ) {}
 
   async buildContext(): Promise<ResumeContext> {
@@ -49,6 +69,7 @@ export class ResumeEngine {
     const latestSession = await this.sessionManager.getLatestSession();
     const failures = await this.failureManager.listFailures();
     const decisions = await this.decisionManager.listDecisions();
+    const activePlan = this.planManager ? await this.planManager.getActivePlan() : undefined;
 
     // Determine next action from handover or state
     let nextAction = latestHandover?.nextAction || (typeof state.nextAction === 'object' ? state.nextAction : {
@@ -62,9 +83,13 @@ export class ResumeEngine {
         ...state.currentFiles,
         ...(latestHandover?.modifiedFiles || []),
         ...gitStatus.modifiedFiles,
-        ...(nextAction.file ? [nextAction.file] : [])
+        ...(nextAction.file ? [nextAction.file] : []),
+        ...(activePlan ? activePlan.steps.flatMap((s) => s.files) : [])
       ])
     ).slice(0, 10);
+
+    // Level 2: recent commits touching relevant files or repo
+    const recentCommits = await this.git.getRecentCommits(5);
 
     const previousFailedApproaches = [
       ...(latestHandover?.failedApproaches || []),
@@ -76,6 +101,24 @@ export class ResumeEngine {
       ...decisions.slice(-3).map((d) => `${d.id} (${d.title}): ${d.decision}`)
     ].slice(0, 3);
 
+    let planData: ResumeContext['plan'] | undefined;
+    if (activePlan) {
+      const completedSteps = activePlan.steps.filter((s) => s.status === 'completed').length;
+      const progressPercentage =
+        activePlan.steps.length > 0 ? Math.round((completedSteps / activePlan.steps.length) * 100) : 0;
+      planData = {
+        id: activePlan.id,
+        title: activePlan.title,
+        status: activePlan.status,
+        goal: activePlan.goal,
+        currentStep: activePlan.currentStep,
+        nextStep: activePlan.nextStep,
+        progressPercentage,
+        steps: activePlan.steps.map((s) => ({ id: s.id, description: s.description, status: s.status })),
+        constraints: activePlan.constraints
+      };
+    }
+
     return {
       project: projectInfo.name || state.project,
       purpose: projectInfo.purpose || '',
@@ -84,15 +127,18 @@ export class ResumeEngine {
       commit: gitStatus.commit?.shortHash || state.lastCommit,
       currentTask: state.currentTask,
       progress: state.progress,
+      plan: planData,
       completed: state.completed,
       remaining: state.remaining,
       currentBlocker: state.currentBlocker,
       relevantFiles,
+      recentCommits,
       previousFailedApproaches,
       recentDecisions,
       lastSession: latestSession?.id || state.lastSession,
       nextAction,
-      hasUncommittedChanges: gitStatus.hasUncommittedChanges
+      hasUncommittedChanges: gitStatus.hasUncommittedChanges,
+      uncommittedStats: gitStatus.stats
     };
   }
 
@@ -102,9 +148,31 @@ export class ResumeEngine {
       `Project: ${ctx.project}`,
       `Branch: ${ctx.branch}${ctx.commit ? ` (${ctx.commit})` : ''}`,
       `Current Task: ${ctx.currentTask} [${ctx.progress}% completed]`,
-      `Status: ${ctx.currentBlocker ? `BLOCKED - ${ctx.currentBlocker}` : 'In Progress'}`,
+      `Status: ${ctx.currentBlocker ? `BLOCKED - ${ctx.currentBlocker}` : 'In Progress'}`
+    ];
+
+    if (ctx.plan) {
+      lines.push(
+        `Active Plan: ${ctx.plan.title} [${ctx.plan.progressPercentage}% completed]`,
+        `Current Step: ${ctx.plan.currentStep || 'None'}`
+      );
+    }
+
+    lines.push(
       `Uncommitted Changes: ${ctx.hasUncommittedChanges ? 'YES (check git status)' : 'None'}\n`,
-      '--- LAST COMPLETED ---',
+      '--- RECENT GIT COMMITS ---'
+    );
+
+    if (ctx.recentCommits.length > 0) {
+      for (const c of ctx.recentCommits.slice(0, 3)) {
+        lines.push(`• ${c.shortHash} ${c.message} (${c.author})`);
+      }
+    } else {
+      lines.push('No recent commits');
+    }
+
+    lines.push(
+      '\n--- LAST COMPLETED ---',
       ctx.completed.length > 0 ? ctx.completed.slice(-3).map((c) => `✓ ${c}`).join('\n') : 'None recorded',
       '\n--- WORK REMAINING ---',
       ctx.remaining.length > 0 ? ctx.remaining.slice(0, 4).map((r) => `□ ${r}`).join('\n') : 'None recorded',
@@ -123,48 +191,74 @@ export class ResumeEngine {
         ? `Constraints:\n${ctx.nextAction.constraints.map((c) => `  * ${c}`).join('\n')}`
         : '',
       '\n===================================================='
-    ];
+    );
 
     return lines.filter((l) => l !== '').join('\n');
   }
 
   formatFullMarkdown(ctx: ResumeContext): string {
-    return `# Continuity Resume Context
+    const lines: string[] = [
+      '# Continuity Resume Context',
+      '\n## 1. Project Identity',
+      `- **Name**: ${ctx.project}`,
+      `- **Purpose**: ${ctx.purpose || 'Not specified'}`,
+      `- **Architecture**: ${ctx.architectureSummary}`,
+      `- **Branch**: \`${ctx.branch}\``,
+      `- **Commit**: \`${ctx.commit || 'unknown'}\``,
+      `- **Uncommitted Changes**: ${ctx.hasUncommittedChanges ? 'Yes' : 'No'}`
+    ];
 
-## 1. Project Identity
-- **Name**: ${ctx.project}
-- **Purpose**: ${ctx.purpose || 'Not specified'}
-- **Architecture**: ${ctx.architectureSummary}
-- **Branch**: \`${ctx.branch}\`
-- **Commit**: \`${ctx.commit || 'unknown'}\`
-- **Uncommitted Changes**: ${ctx.hasUncommittedChanges ? 'Yes' : 'No'}
+    if (ctx.plan) {
+      lines.push(
+        '\n## 2. Active Plan',
+        `- **Plan**: ${ctx.plan.title} (\`${ctx.plan.id}\`)`,
+        `- **Goal**: ${ctx.plan.goal}`,
+        `- **Progress**: ${ctx.plan.progressPercentage}%`,
+        `- **Current Step**: ${ctx.plan.currentStep || 'None'}`,
+        `- **Next Step**: ${ctx.plan.nextStep || 'None'}`
+      );
+      if (ctx.plan.constraints.length > 0) {
+        lines.push(`- **Constraints**:\n${MarkdownHelper.formatBulletList(ctx.plan.constraints, '  *')}`);
+      }
+    }
 
-## 2. Current Task & Progress
-- **Task**: ${ctx.currentTask}
-- **Progress**: ${ctx.progress}%
-- **Blocker**: ${ctx.currentBlocker || 'None'}
+    lines.push(
+      '\n## 3. Current Task & Progress',
+      `- **Task**: ${ctx.currentTask}`,
+      `- **Progress**: ${ctx.progress}%`,
+      `- **Blocker**: ${ctx.currentBlocker || 'None'}`,
+      '\n### Completed',
+      MarkdownHelper.formatBulletList(ctx.completed, '✓'),
+      '\n### Remaining',
+      MarkdownHelper.formatBulletList(ctx.remaining, '□'),
+      '\n## 4. Recent Git History'
+    );
 
-### Completed
-${MarkdownHelper.formatBulletList(ctx.completed, '✓')}
+    if (ctx.recentCommits.length > 0) {
+      for (const c of ctx.recentCommits) {
+        lines.push(`- \`${c.shortHash}\` **${c.message}** (${c.author}, ${c.date})`);
+      }
+    } else {
+      lines.push('No recent commits.');
+    }
 
-### Remaining
-${MarkdownHelper.formatBulletList(ctx.remaining, '□')}
+    lines.push(
+      '\n## 5. Relevant Source Files',
+      MarkdownHelper.formatBulletList(ctx.relevantFiles),
+      '\n## 6. Architectural Constraints & Key Decisions',
+      MarkdownHelper.formatBulletList(ctx.recentDecisions),
+      '\n## 7. Failed Approaches ("Do Not Repeat")',
+      MarkdownHelper.formatBulletList(ctx.previousFailedApproaches, '⚠️'),
+      '\n## 8. Recommended Next Action',
+      ctx.nextAction.file ? `- **Open**: \`${ctx.nextAction.file}\`` : '',
+      ctx.nextAction.focus ? `- **Focus**: \`${ctx.nextAction.focus}\`` : '',
+      `- **Problem**: ${ctx.nextAction.problem}`,
+      `- **Expected Solution**: ${ctx.nextAction.expectedSolution}`,
+      ctx.nextAction.constraints.length > 0
+        ? `- **Constraints**:\n${MarkdownHelper.formatBulletList(ctx.nextAction.constraints, '  *')}`
+        : ''
+    );
 
-## 3. Relevant Source Files
-${MarkdownHelper.formatBulletList(ctx.relevantFiles)}
-
-## 4. Architectural Constraints & Key Decisions
-${MarkdownHelper.formatBulletList(ctx.recentDecisions)}
-
-## 5. Failed Approaches ("Do Not Repeat")
-${MarkdownHelper.formatBulletList(ctx.previousFailedApproaches, '⚠️')}
-
-## 6. Recommended Next Action
-${ctx.nextAction.file ? `- **Open**: \`${ctx.nextAction.file}\`` : ''}
-${ctx.nextAction.focus ? `- **Focus**: \`${ctx.nextAction.focus}\`` : ''}
-- **Problem**: ${ctx.nextAction.problem}
-- **Expected Solution**: ${ctx.nextAction.expectedSolution}
-${ctx.nextAction.constraints.length > 0 ? `- **Constraints**:\n${MarkdownHelper.formatBulletList(ctx.nextAction.constraints, '  *')}` : ''}
-`;
+    return lines.filter((l) => l !== '').join('\n');
   }
 }

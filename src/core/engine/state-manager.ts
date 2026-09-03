@@ -97,6 +97,38 @@ export class StateManager {
     };
   }
 
+  async saveProjectInfo(info: Partial<ProjectInfo>): Promise<ProjectInfo> {
+    const current = await this.getProjectInfo();
+    const merged: ProjectInfo = {
+      ...current,
+      ...info
+    };
+    const content = `# Project Overview
+
+## Name
+${merged.name}
+
+## Purpose
+${merged.purpose || 'Not specified'}
+
+## Stack
+${MarkdownHelper.formatBulletList(merged.stack)}
+
+## Architecture
+${merged.architecture || 'Not specified'}
+
+## Database
+${merged.database || 'Not specified'}
+
+## Infrastructure
+${MarkdownHelper.formatBulletList(merged.infrastructure)}
+
+${merged.repository ? `## Repository\n${merged.repository}\n` : ''}
+`;
+    await this.fs.writeFile(this.fs.resolveContinuity('project.md'), content);
+    return merged;
+  }
+
   async getArchitecture(): Promise<string> {
     const archPath = this.fs.resolveContinuity('architecture.md');
     if (!this.fs.exists(archPath)) return '';

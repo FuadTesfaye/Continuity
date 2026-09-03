@@ -5,3 +5,6 @@ export * from './failure.js';
 export * from './session.js';
 export * from './handover.js';
 export * from './state.js';
+export * from './plan.js';
+export * from './context.js';
+export * from './graph.js';
