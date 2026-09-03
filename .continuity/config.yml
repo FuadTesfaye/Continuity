@@ -1,0 +1,33 @@
+# Continuity Configuration
+
+version: 1
+
+git:
+  track:
+    - state.md
+    - project.md
+    - architecture.md
+    - roadmap.md
+    - index.md
+    - tasks/**
+    - decisions/**
+    - failures/**
+    - handovers/**
+    - sessions/summaries/**
+  ignore:
+    - sessions/raw/**
+    - cache/**
+    - "*.tmp"
+
+redaction:
+  enabled: true
+  files:
+    - .env
+    - .env.*
+    - "*.pem"
+    - "*.key"
+    - id_rsa
+    - credentials.json
+
+ai:
+  instructionsFile: CONTINUITY.md

@@ -1,0 +1,5 @@
+# Continuity Protocol for Cline / Roo-Code
+Always check `.continuity/state.md` before beginning.
+Resume context using `continuity resume`.
+Record failed attempts into `.continuity/failures/`.
+Generate handover on completion using `continuity handover`.

@@ -1,0 +1,3 @@
+# Continuity local cache and raw transcripts
+.continuity/cache/
+.continuity/sessions/raw/

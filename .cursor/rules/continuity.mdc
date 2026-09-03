@@ -1,0 +1,17 @@
+---
+description: Continuity system integration for Cursor
+globs: *
+---
+
+# Continuity Protocol for Cursor
+
+This repository uses Continuity for persistent context across AI and human sessions.
+
+- Before starting work:
+  1. Inspect `.continuity/state.md` or run `continuity resume`.
+  2. Follow the recorded "Next Action".
+  3. Never repeat failed approaches listed in `.continuity/failures/`.
+
+- After making significant changes or completing tasks:
+  1. Update `.continuity/state.md` or run `continuity task update`.
+  2. If handing over, run `continuity handover`.

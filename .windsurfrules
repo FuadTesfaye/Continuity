@@ -1,0 +1,4 @@
+# Continuity Rules for Windsurf
+- On task start: Run `continuity resume` and follow Next Action.
+- Do not repeat approaches documented in `.continuity/failures/`.
+- On completion: Run `continuity handover`.
