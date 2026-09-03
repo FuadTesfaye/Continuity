@@ -2,6 +2,7 @@
 
 // src/cli.ts
 import { Command } from "commander";
+import pc2 from "picocolors";
 
 // src/cli/commands/init.ts
 import path3 from "path";
@@ -4583,5 +4584,87 @@ program.command("search <query>").description("Search across all continuity docu
 program.command("doctor").description("Run health checks on .continuity/, git status, secret scanning, and file integrity").action(runDoctor);
 program.command("export").description("Export all project continuity context into a single Markdown or JSON bundle").option("-o, --output <file>", "Output file path").option("--json", "Export as structured JSON").action(runExport);
 program.command("done").description("Finalize the current session, record summary, and generate handover in one command").option("-s, --summary <summary>", "Summary of work accomplished").option("--next-file <file>", "Next file to open").option("--next-problem <problem>", "Next problem to address").option("--next-solution <solution>", "Expected solution approach").option("-a, --agent <agent>", "Agent identifier").action(runDone);
+program.helpInformation = () => {
+  return `
+${pc2.bold(pc2.cyan("======================================================================"))}
+  ${pc2.bold(pc2.white("CONTINUITY \u{1F504} \u2014 Portable Project Context & Work-State System"))}
+${pc2.bold(pc2.cyan("======================================================================"))}
+
+  ${pc2.gray("Reconstructs work from 6 sources of truth:")}
+  ${pc2.cyan("Code")} \u2022 ${pc2.green("Git History")} \u2022 ${pc2.yellow("Current State")} \u2022 ${pc2.blue("Persistent Plans")} \u2022 ${pc2.magenta("Sessions")} \u2022 ${pc2.red("ADRs & Failures")}
+
+${pc2.bold(pc2.yellow("USAGE:"))}
+  $ continuity <command> [options]
+
+${pc2.bold(pc2.yellow("COMMANDS BY CATEGORY:"))}
+
+  ${pc2.bold(pc2.cyan("\u{1F680} PROJECT SETUP & HEALTH"))}
+    ${pc2.green("init")}                  Initialize Continuity, protocol, and AI agent adapters
+    ${pc2.green("status")}                Show current branch, active task, progress %, and next action
+    ${pc2.green("doctor")}                Validate project health, git state, and scan for leaked secrets
+
+  ${pc2.bold(pc2.cyan("\u{1F4CB} PLANS & TASKS (LIFECYCLE)"))}
+    ${pc2.green("plan create")} <title>    Create persistent plan with goals, steps, criteria, constraints
+    ${pc2.green("plan list")}             List active, blocked, completed, and abandoned plans
+    ${pc2.green("plan show")} <id>         Show full plan steps checklist and acceptance criteria
+    ${pc2.green("plan update")} <id>       Advance steps, mark criteria satisfied, or update status
+    ${pc2.green("task start")} <title>     Start an active task with checklist and target files
+    ${pc2.green("task update")} [id]       Update task progress, completed items, or blockers
+    ${pc2.green("task complete")} [id]     Mark active task finished and archive to tasks/completed/
+    ${pc2.green("task list")}             List active, completed, and blocked tasks
+
+  ${pc2.bold(pc2.cyan("\u{1F50D} GIT CONTEXT & ARCHAEOLOGY"))}
+    ${pc2.green("git")}                   Inspect branch, HEAD commit, uncommitted stats, and recent commits
+    ${pc2.green("history")} <path>        Temporal evolution of a file/module across commits and tags
+    ${pc2.green("history")} <p> -s <sym>  Pickaxe archaeology: find exact commit introducing a symbol
+    ${pc2.green("diff")} [files...]       Context-aware smart diff of working tree changes
+
+  ${pc2.bold(pc2.cyan("\u{1F9E0} KNOWLEDGE, MEMORY & SEARCH"))}
+    ${pc2.green("session save")}          Record session summary, changes, decisions, and raw transcript
+    ${pc2.green("session list")}          View historical developer and AI sessions
+    ${pc2.green("decision")} [title]      Record or list Architecture Decision Records (ADRs)
+    ${pc2.green("log")} <message>         Quickly append an architectural decision to ADRs
+    ${pc2.green("failure record")}        Document failed attempts and "Do Not Repeat" lessons
+    ${pc2.green("failure list")}          Review all recorded failure post-mortems
+    ${pc2.green("context")} <query>       Ask questions about past decisions, sessions, architecture
+    ${pc2.green("search")} <query>        Fast full-text search across all markdown files via SQLite FTS5
+    ${pc2.green("explain")} <file>        Show file provenance, related tasks, ADRs, and commit history
+    ${pc2.green("checkpoint")} [name]     Snapshot point-in-time state and context
+    ${pc2.green("restore-context")} <id>  Roll back work-state to a previous checkpoint
+    ${pc2.green("export")}                Bundle all continuity context into a single Markdown or JSON file
+
+  ${pc2.bold(pc2.cyan("\u{1F916} AI RESUME, VERIFICATION & HANDOVER"))}
+    ${pc2.green("resume")}                Compile compact 6-source context for any AI agent to continue
+    ${pc2.green("prompt")} [task]         Generate ranked context payload ready to pipe to any LLM CLI
+    ${pc2.green("verify")} [planId]       Evaluate plan steps, criteria, git changes, and test suite
+    ${pc2.green("handover")}              Package current work into an actionable continuation package
+    ${pc2.green("done")}                  One-step wrapup: record summary and generate handover
+
+${pc2.bold(pc2.yellow("WORKFLOW DEMONSTRATION:"))}
+  ${pc2.gray("# 1. Start session or let any AI inspect context:")}
+  $ continuity resume
+
+  ${pc2.gray("# 2. Query why code exists with Git archaeology:")}
+  $ continuity history src/auth/service.ts --symbol verifyRefreshToken
+
+  ${pc2.gray("# 3. Establish a multi-step persistent plan:")}
+  $ continuity plan create "Auth Refactor" --goal "JWT + rotation" \\
+      --steps "Middleware,Token service,Revocation" \\
+      --criteria "Tokens expire in 15m,Replay rejected"
+
+  ${pc2.gray("# 4. Check off steps as you implement code:")}
+  $ continuity plan update auth-refactor --complete-step 1
+
+  ${pc2.gray("# 5. Verify completeness before concluding session:")}
+  $ continuity verify --test
+
+  ${pc2.gray("# 6. Handover to next AI agent without knowledge loss:")}
+  $ continuity done --summary "Completed middleware, ready for token service"
+`;
+};
+if (process.argv.length <= 2) {
+  console.log(program.helpInformation());
+  process.exit(0);
+}
 program.parse(process.argv);
 //# sourceMappingURL=cli.js.map

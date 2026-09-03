@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
+import pc from 'picocolors';
 import { runInit } from './cli/commands/init.js';
 import { runStatus } from './cli/commands/status.js';
 import { runResume } from './cli/commands/resume.js';
@@ -303,5 +304,89 @@ program
   .option('--next-solution <solution>', 'Expected solution approach')
   .option('-a, --agent <agent>', 'Agent identifier')
   .action(runDone);
+
+program.helpInformation = () => {
+  return `
+${pc.bold(pc.cyan('======================================================================'))}
+  ${pc.bold(pc.white('CONTINUITY 🔄 — Portable Project Context & Work-State System'))}
+${pc.bold(pc.cyan('======================================================================'))}
+
+  ${pc.gray('Reconstructs work from 6 sources of truth:')}
+  ${pc.cyan('Code')} • ${pc.green('Git History')} • ${pc.yellow('Current State')} • ${pc.blue('Persistent Plans')} • ${pc.magenta('Sessions')} • ${pc.red('ADRs & Failures')}
+
+${pc.bold(pc.yellow('USAGE:'))}
+  $ continuity <command> [options]
+
+${pc.bold(pc.yellow('COMMANDS BY CATEGORY:'))}
+
+  ${pc.bold(pc.cyan('🚀 PROJECT SETUP & HEALTH'))}
+    ${pc.green('init')}                  Initialize Continuity, protocol, and AI agent adapters
+    ${pc.green('status')}                Show current branch, active task, progress %, and next action
+    ${pc.green('doctor')}                Validate project health, git state, and scan for leaked secrets
+
+  ${pc.bold(pc.cyan('📋 PLANS & TASKS (LIFECYCLE)'))}
+    ${pc.green('plan create')} <title>    Create persistent plan with goals, steps, criteria, constraints
+    ${pc.green('plan list')}             List active, blocked, completed, and abandoned plans
+    ${pc.green('plan show')} <id>         Show full plan steps checklist and acceptance criteria
+    ${pc.green('plan update')} <id>       Advance steps, mark criteria satisfied, or update status
+    ${pc.green('task start')} <title>     Start an active task with checklist and target files
+    ${pc.green('task update')} [id]       Update task progress, completed items, or blockers
+    ${pc.green('task complete')} [id]     Mark active task finished and archive to tasks/completed/
+    ${pc.green('task list')}             List active, completed, and blocked tasks
+
+  ${pc.bold(pc.cyan('🔍 GIT CONTEXT & ARCHAEOLOGY'))}
+    ${pc.green('git')}                   Inspect branch, HEAD commit, uncommitted stats, and recent commits
+    ${pc.green('history')} <path>        Temporal evolution of a file/module across commits and tags
+    ${pc.green('history')} <p> -s <sym>  Pickaxe archaeology: find exact commit introducing a symbol
+    ${pc.green('diff')} [files...]       Context-aware smart diff of working tree changes
+
+  ${pc.bold(pc.cyan('🧠 KNOWLEDGE, MEMORY & SEARCH'))}
+    ${pc.green('session save')}          Record session summary, changes, decisions, and raw transcript
+    ${pc.green('session list')}          View historical developer and AI sessions
+    ${pc.green('decision')} [title]      Record or list Architecture Decision Records (ADRs)
+    ${pc.green('log')} <message>         Quickly append an architectural decision to ADRs
+    ${pc.green('failure record')}        Document failed attempts and "Do Not Repeat" lessons
+    ${pc.green('failure list')}          Review all recorded failure post-mortems
+    ${pc.green('context')} <query>       Ask questions about past decisions, sessions, architecture
+    ${pc.green('search')} <query>        Fast full-text search across all markdown files via SQLite FTS5
+    ${pc.green('explain')} <file>        Show file provenance, related tasks, ADRs, and commit history
+    ${pc.green('checkpoint')} [name]     Snapshot point-in-time state and context
+    ${pc.green('restore-context')} <id>  Roll back work-state to a previous checkpoint
+    ${pc.green('export')}                Bundle all continuity context into a single Markdown or JSON file
+
+  ${pc.bold(pc.cyan('🤖 AI RESUME, VERIFICATION & HANDOVER'))}
+    ${pc.green('resume')}                Compile compact 6-source context for any AI agent to continue
+    ${pc.green('prompt')} [task]         Generate ranked context payload ready to pipe to any LLM CLI
+    ${pc.green('verify')} [planId]       Evaluate plan steps, criteria, git changes, and test suite
+    ${pc.green('handover')}              Package current work into an actionable continuation package
+    ${pc.green('done')}                  One-step wrapup: record summary and generate handover
+
+${pc.bold(pc.yellow('WORKFLOW DEMONSTRATION:'))}
+  ${pc.gray('# 1. Start session or let any AI inspect context:')}
+  $ continuity resume
+
+  ${pc.gray('# 2. Query why code exists with Git archaeology:')}
+  $ continuity history src/auth/service.ts --symbol verifyRefreshToken
+
+  ${pc.gray('# 3. Establish a multi-step persistent plan:')}
+  $ continuity plan create "Auth Refactor" --goal "JWT + rotation" \\
+      --steps "Middleware,Token service,Revocation" \\
+      --criteria "Tokens expire in 15m,Replay rejected"
+
+  ${pc.gray('# 4. Check off steps as you implement code:')}
+  $ continuity plan update auth-refactor --complete-step 1
+
+  ${pc.gray('# 5. Verify completeness before concluding session:')}
+  $ continuity verify --test
+
+  ${pc.gray('# 6. Handover to next AI agent without knowledge loss:')}
+  $ continuity done --summary "Completed middleware, ready for token service"
+`;
+};
+
+if (process.argv.length <= 2) {
+  console.log(program.helpInformation());
+  process.exit(0);
+}
 
 program.parse(process.argv);
