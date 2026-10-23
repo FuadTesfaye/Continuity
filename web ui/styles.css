@@ -107,3 +107,15 @@ html body { background: var(--token-e26cb5bb-4788-4822-b78d-8e8fc7f741b8, rgb(0,
   height: 0 !important;
   width: 0 !important;
 }
+
+/* FAQ Accordion Interactive Styling */
+.continuity-faq-item:hover {
+  border-color: rgba(243, 255, 201, 0.25) !important;
+}
+.continuity-faq-item.active {
+  border-color: rgba(243, 255, 201, 0.4) !important;
+  background-color: var(--token-f494e65c-542e-4800-8321-8cc382678431, rgb(22, 26, 24)) !important;
+}
+.continuity-faq-trigger:hover .continuity-faq-icon {
+  background: rgba(243, 255, 201, 0.15) !important;
+}
