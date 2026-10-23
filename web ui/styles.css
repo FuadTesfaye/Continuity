@@ -71,3 +71,26 @@ html, body { scroll-behavior: auto !important; }
 :root body { background: var(--token-e26cb5bb-4788-4822-b78d-8e8fc7f741b8, rgb(0, 0, 0)); }
 
 html body { background: var(--token-e26cb5bb-4788-4822-b78d-8e8fc7f741b8, rgb(0, 0, 0)); }
+/* Continuity Ticker Animation */
+@keyframes continuityMarqueeLoop {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.framer-njzxgm ul {
+  display: flex !important;
+  width: max-content !important;
+  animation: continuityMarqueeLoop 30s linear infinite !important;
+  will-change: transform;
+}
+
+.framer-ur9l83 ul {
+  display: flex !important;
+  width: max-content !important;
+  animation: continuityMarqueeLoop 40s linear infinite !important;
+  will-change: transform;
+}
+
+.framer-njzxgm ul:hover, .framer-ur9l83 ul:hover {
+  animation-play-state: paused;
+}
