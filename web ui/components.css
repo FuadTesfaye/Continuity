@@ -1,0 +1,180 @@
+/* Continuity Component Styles - livery-b2bizz-wbs-framer-website v1 */
+@import url('tokens.css');
+
+/* Reusable Buttons */
+.continuity-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--continuity-accent-lime);
+  color: var(--continuity-text-dark);
+  font-family: var(--continuity-font-main);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 14px 28px;
+  border-radius: var(--continuity-radius-10);
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.25s cubic-bezier(0.44, 0, 0.56, 1);
+  box-sizing: border-box;
+}
+
+.continuity-btn-primary:hover {
+  background-color: #e5f5b5;
+  transform: translateY(-1px);
+}
+
+.continuity-btn-primary:focus-visible {
+  outline: 2px solid var(--continuity-accent-lime);
+  outline-offset: 2px;
+}
+
+.continuity-btn-outline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background-color: transparent;
+  color: var(--continuity-text-title);
+  border: 1px solid var(--continuity-border-subtle);
+  border-radius: var(--continuity-radius-pill);
+  font-family: var(--continuity-font-main);
+  font-size: 14px;
+  font-weight: 400;
+  padding: 10px 20px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.25s cubic-bezier(0.44, 0, 0.56, 1);
+}
+
+.continuity-btn-outline:hover {
+  border-color: var(--continuity-border-active);
+  background-color: rgba(243, 255, 201, 0.05);
+  transform: translateY(-1px);
+}
+
+/* Nav Pills */
+.continuity-nav-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 16px;
+  border-radius: var(--continuity-radius-pill);
+  font-family: var(--continuity-font-main);
+  font-size: 13px;
+  color: var(--continuity-text-body);
+  text-decoration: none;
+  transition: all 0.2s ease;
+  background-color: transparent;
+}
+
+.continuity-nav-pill:hover {
+  color: var(--continuity-text-title);
+  background-color: rgba(255, 255, 255, 0.04);
+}
+
+.continuity-nav-pill.active {
+  background-color: var(--continuity-pill-active);
+  color: var(--continuity-text-title);
+}
+
+/* Ticker & Marquee Components */
+.continuity-ticker-wrapper {
+  overflow: hidden;
+  position: relative;
+  width: 100%;
+  mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+}
+
+.continuity-ticker-track {
+  display: flex;
+  gap: 30px;
+  width: max-content;
+  will-change: transform;
+}
+
+.continuity-ticker-track.animate-marquee {
+  animation: continuityMarquee 35s linear infinite;
+}
+
+.continuity-ticker-track.animate-marquee-slow {
+  animation: continuityMarquee 50s linear infinite;
+}
+
+.continuity-ticker-track:hover {
+  animation-play-state: paused;
+}
+
+@keyframes continuityMarquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.continuity-ticker-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 18px;
+  background-color: var(--continuity-bg-card);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: var(--continuity-radius-pill);
+  white-space: nowrap;
+}
+
+.continuity-ticker-item img {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+}
+
+.continuity-ticker-item span {
+  font-family: var(--continuity-font-main);
+  font-size: 14px;
+  color: var(--continuity-text-body);
+}
+
+/* Cards */
+.continuity-card {
+  background-color: var(--continuity-bg-card);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--continuity-radius-20);
+  padding: 32px;
+  transition: all 0.3s cubic-bezier(0.44, 0, 0.56, 1);
+}
+
+.continuity-card:hover {
+  border-color: var(--continuity-border-subtle);
+  background-color: var(--continuity-bg-card-hover);
+  transform: translateY(-2px);
+}
+
+.continuity-card-alt {
+  background-color: var(--continuity-bg-surface-alt);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: var(--continuity-radius-30);
+  padding: 40px;
+}
+
+/* Glowing dot & list items */
+.continuity-list-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--continuity-radius-pill);
+  background-color: var(--continuity-accent-lime);
+  box-shadow: 0 0 10px rgba(243, 255, 201, 0.5);
+  flex-shrink: 0;
+}
+
+/* Code badge / command pill */
+.continuity-code-pill {
+  font-family: monospace;
+  font-size: 13px;
+  color: var(--continuity-text-title);
+  background-color: #121413;
+  padding: 6px 14px;
+  border-radius: var(--continuity-radius-sm);
+  border: 1px solid rgba(243, 255, 201, 0.15);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}

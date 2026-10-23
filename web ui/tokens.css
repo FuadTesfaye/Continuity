@@ -1,0 +1,38 @@
+/* Continuity Design Tokens - based on livery-b2bizz-wbs-framer-website v1 */
+:root {
+  /* Surface and Background Tones */
+  --continuity-bg-primary: #000000;
+  --continuity-bg-surface: #070807;
+  --continuity-bg-surface-alt: #0d100e;
+  --continuity-bg-card: #0e100f;
+  --continuity-bg-card-hover: #161a18;
+  --continuity-border-subtle: rgba(243, 255, 201, 0.12);
+  --continuity-border-active: rgba(243, 255, 201, 0.4);
+
+  /* Typography Colors */
+  --continuity-text-title: #f3ffc9;
+  --continuity-text-body: #bbc1a7;
+  --continuity-text-muted: #a9ad9b;
+  --continuity-text-dark: #161a18;
+
+  /* Accents */
+  --continuity-accent-indigo: #0000ee;
+  --continuity-accent-lime: #f3ffc9;
+  --continuity-pill-active: #2f3126;
+
+  /* Font Families */
+  --continuity-font-main: "Arial", -apple-system, BlinkMacSystemFont, sans-serif;
+  --continuity-font-heading: "Arial", sans-serif;
+  --continuity-font-display: "Geist", "Arial", sans-serif;
+
+  /* Measured Radii */
+  --continuity-radius-3: 3px;
+  --continuity-radius-6: 6px;
+  --continuity-radius-10: 10px;
+  --continuity-radius-20: 20px;
+  --continuity-radius-30: 30px;
+  --continuity-radius-pill: 100px;
+
+  /* Layout */
+  --continuity-container-width: 1460px;
+}
