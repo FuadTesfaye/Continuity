@@ -71,28 +71,18 @@ html, body { scroll-behavior: smooth !important; }
 :root body { background: var(--token-e26cb5bb-4788-4822-b78d-8e8fc7f741b8, rgb(0, 0, 0)); }
 
 html body { background: var(--token-e26cb5bb-4788-4822-b78d-8e8fc7f741b8, rgb(0, 0, 0)); }
-/* Continuity Ticker Animation */
-@keyframes continuityMarqueeLoop {
-  0% { transform: translateX(0); }
-  100% { transform: translateX(-50%); }
-}
-
-.framer-njzxgm ul {
+/* Continuity Ticker Animation & Smooth Layout */
+.framer-njzxgm ul, .framer-ur9l83 ul {
   display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
   width: max-content !important;
-  animation: continuityMarqueeLoop 30s linear infinite !important;
   will-change: transform;
 }
 
-.framer-ur9l83 ul {
-  display: flex !important;
-  width: max-content !important;
-  animation: continuityMarqueeLoop 40s linear infinite !important;
-  will-change: transform;
-}
-
-.framer-njzxgm ul:hover, .framer-ur9l83 ul:hover {
-  animation-play-state: paused;
+.framer-njzxgm ul > li, .framer-ur9l83 ul > li {
+  flex-shrink: 0 !important;
+  transform: none !important;
 }
 
 /* Hide any Framer badge or floating widget */
@@ -108,14 +98,44 @@ html body { background: var(--token-e26cb5bb-4788-4822-b78d-8e8fc7f741b8, rgb(0,
   width: 0 !important;
 }
 
+/* Slideshow Enhancements & Interactivity */
+.framer-slideshow ul {
+  will-change: transform;
+}
+.framer-slideshow ul > li > div {
+  visibility: visible !important;
+}
+fieldset.framer--slideshow-controls button {
+  transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1), background-color 0.2s ease;
+  user-select: none;
+}
+fieldset.framer--slideshow-controls button:hover {
+  transform: scale(1.08) !important;
+  background-color: var(--token-60e80955-6a00-4025-b930-d753d40d1742, rgb(47, 49, 38)) !important;
+}
+fieldset.framer--slideshow-controls button:active {
+  transform: scale(0.94) !important;
+}
+
 /* FAQ Accordion Interactive Styling */
+.continuity-faq-item {
+  transition: border-color 0.25s ease, background-color 0.25s ease;
+}
 .continuity-faq-item:hover {
-  border-color: rgba(243, 255, 201, 0.25) !important;
+  border-color: rgba(243, 255, 201, 0.3) !important;
 }
 .continuity-faq-item.active {
-  border-color: rgba(243, 255, 201, 0.4) !important;
+  border-color: rgba(243, 255, 201, 0.5) !important;
   background-color: var(--token-f494e65c-542e-4800-8321-8cc382678431, rgb(22, 26, 24)) !important;
 }
+.continuity-faq-icon {
+  transition: transform 0.35s cubic-bezier(0.25, 1, 0.5, 1), background-color 0.25s ease;
+}
 .continuity-faq-trigger:hover .continuity-faq-icon {
-  background: rgba(243, 255, 201, 0.15) !important;
+  background: rgba(243, 255, 201, 0.2) !important;
+}
+.continuity-faq-content {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.4s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.35s ease;
 }
